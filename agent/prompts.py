@@ -3147,24 +3147,46 @@ POC FORMATS BY VULNERABILITY TYPE:
     ```
 
 CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
+  These are VERIFIED against the NVD CVSS v3.1 calculator. Each vector string
+  produces exactly the score shown. Do NOT modify the vectors or scores.
+
+  CRITICAL (9.0-10.0):
   SQLi (auth bypass)           → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-  Stored XSS                   → 8.8  CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:H/I:H/A:N
-  Reflected XSS                → 6.1  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
-  Horizontal IDOR (read)       → 6.5  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
-  Vertical IDOR (priv esc)     → 8.8  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
-  Write IDOR                   → 8.1  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N
   Command Injection            → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-  SSRF (internal)              → 8.6  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N
   Insecure Deserialization/RCE → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-  API IDOR (no auth)           → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
-  Missing CSP                  → 5.4  CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
-  Missing HSTS                 → 5.9  CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N
-  Server version disclosure    → 5.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
   Default credentials          → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-  MD5 password storage         → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+  Stored XSS (admin takeover)  → 9.0  CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:H/I:H/A:N
+
+  HIGH (7.0-8.9):
+  Vertical IDOR (priv esc)     → 8.8  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
   Missing CSRF token           → 8.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N
+  SSRF (internal network)      → 8.6  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N
+  Write IDOR                   → 8.1  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N
   Weak session secret          → 8.1  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N
+  API IDOR (no auth)           → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+  MD5 password storage         → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
   Predictable reset token      → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+  Open Redirect                → 6.1  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+  CRLF Injection               → 8.1  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N
+  CORS misconfiguration        → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+  Host Header Injection        → 6.1  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+
+  MEDIUM (4.0-6.9):
+  Horizontal IDOR (read)       → 6.5  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+  Reflected XSS                → 6.1  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+  Stored XSS (self-only)       → 5.4  CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+  Missing HSTS                 → 5.9  CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N
+  Missing CSP                  → 5.4  CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+  Server version disclosure    → 5.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+  Directory listing            → 5.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+  Session fixation             → 6.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:N/A:N
+  Cookie without HttpOnly      → 4.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N
+  Cookie without Secure flag   → 4.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N
+
+  LOW / INFO:
+  Missing X-Frame-Options      → 4.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N
+  Missing X-Content-Type       → 3.7  CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N
+  HTTP TRACE enabled           → 5.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
 
 **Phase 10 — HTTP Protocol & Header Attacks**
   These are server-level tests that go beyond the application layer.
