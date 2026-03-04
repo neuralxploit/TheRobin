@@ -1,3 +1,4 @@
+<div align="center">
 
 ```
                · T h e ·
@@ -7,69 +8,84 @@
  ██╔══██╗██║   ██║██╔══██╗██║██║╚██╗██║
  ██║  ██║╚██████╔╝██████╔╝██║██║ ╚████║
  ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝
-
-    AI Offensive Security & OSINT Engine
 ```
 
-# TheRobin
+### AI Offensive Security & OSINT Engine
 
-**Autonomous AI-powered penetration testing and OSINT engine.** TheRobin uses LLMs via [Ollama](https://ollama.com) to perform real-world web application security assessments — no cloud API keys required.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Ollama](https://img.shields.io/badge/LLM-Ollama-orange.svg)](https://ollama.com)
+[![OWASP](https://img.shields.io/badge/OWASP-Top%2010-red.svg)](https://owasp.org/www-project-top-ten/)
 
-It works with both **local models** (data stays on your machine) and **cloud-proxied models** via Ollama (e.g. `glm-4.7:cloud`, `kimi-k2:1t-cloud`). Choose based on your privacy requirements.
+**Autonomous AI-driven penetration testing framework powered by LLMs.**
+<br>
+TheRobin executes a full 12-phase web application security assessment autonomously —
+<br>
+from reconnaissance to report generation — using an AI agent that writes, executes, and iterates on its own attack code.
 
-The AI agent writes and executes Python code in a persistent REPL (like a Jupyter notebook), runs system tools (nmap, sqlmap, gobuster), and methodically works through a 12-phase pentest methodology. It thinks like a real attacker, tests like an engineer, and reports like a professional.
+[Getting Started](#installation) · [Usage](#usage) · [Test Lab](#-vulnerable-test-app) · [Tor Mode](#-tor--anonymity-support) · [Architecture](#architecture)
+
+</div>
 
 ---
 
-## Features
+## Overview
 
-- **Fully autonomous** — give it a target, it runs a complete pentest (12 phases)
-- **Ollama-powered** — works with local models (fully private) or cloud-proxied models via Ollama
-- **Persistent REPL** — agent builds on previous code, maintains session state across calls
-- **OSINT mode** — passive recon: subdomain enum (crt.sh), DNS, WHOIS, Wayback, DuckDuckGo dorking
-- **Pre-authenticated sessions** — paste a cookie string for 2FA/complex auth targets
-- **Tor support** — route all HTTP traffic through Tor (`--tor` flag or `set TOR on`)
-- **Professional reports** — generates Markdown reports with CVSS scores, curl PoCs, and remediation
-- **Zero false positives** — strict confirmation logic (parses response bodies, not just status codes)
-- **Rich TUI** — color-coded console with real-time tool output and phase tracking
+TheRobin is an offensive security tool that uses Large Language Models via [Ollama](https://ollama.com) to conduct autonomous penetration tests against web applications. Unlike traditional scanners that rely on signature matching, TheRobin's AI agent **reasons about responses**, **adapts its attack strategy**, and **confirms vulnerabilities** before reporting them.
 
-## What It Tests
+The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 12-phase methodology but adapts dynamically based on what it discovers.
 
-| Phase | Coverage |
-|-------|----------|
-| 1 | Reconnaissance — headers, tech stack, directory bruteforce |
-| 2 | Authentication — default creds, brute-force, login bypass |
-| 3 | Authenticated crawl — form discovery, ID harvesting |
-| 4 | Session management — cookie flags, fixation, JWT analysis |
-| 5 | XSS — reflected, stored, DOM-based |
-| 6 | SQL injection — error-based, blind, auth bypass |
-| 7 | Access control & CSRF — unauth access, CSRF confirmation |
-| 8 | Technology fingerprinting — version detection, CVE lookup, JS analysis |
-| 9 | Advanced web — CORS, open redirect, CRLF, HTTP methods, SSL/TLS |
-| 10 | HTTP protocol attacks — host header injection, request smuggling, GraphQL |
-| 11 | IDOR — cross-user access control (requires 2nd account) |
-| 12 | Report generation — findings summary, curl PoCs, CVSS, remediation |
+### Key Capabilities
 
-## Architecture
+| | Capability | Details |
+|---|---|---|
+| 🤖 | **Autonomous Agent** | AI writes & executes attack code in a persistent REPL — no manual scripting needed |
+| 🔍 | **OSINT Recon** | Subdomain enumeration (crt.sh), DNS, WHOIS, Wayback Machine, DuckDuckGo dorking |
+| 🌐 | **Full Web Testing** | SQLi, XSS, CSRF, IDOR, SSRF, CRLF, command injection, deserialization, and more |
+| 🔐 | **2FA / Cookie Auth** | Paste a session cookie for targets with complex authentication |
+| 🧅 | **Tor Routing** | Route all agent traffic through Tor with one flag |
+| 📊 | **Professional Reports** | Markdown reports with CVSS v3.1 scores, reproducible curl PoCs, and remediation |
+| ✅ | **Zero False Positives** | Strict confirmation logic — every finding is verified, not just observed |
+| 🖥️ | **Rich TUI** | Color-coded terminal interface with real-time tool output and phase tracking |
+
+### Privacy Notice
+
+TheRobin works with both **local models** (data never leaves your machine) and **cloud-proxied models** via Ollama (`:cloud` suffix — data is sent to the model provider). Choose based on your operational security requirements.
+
+---
+
+## Testing Methodology
+
+TheRobin follows a structured 12-phase approach covering the OWASP Top 10 and beyond:
 
 ```
-main.py → app.py (App) → agent/loop.py (AgentLoop) + ui/console.py (TUI)
-                          │
-                          ├── agent/tools.py    — 5 tools: run_python, bash, write_file, read_file, web_request
-                          ├── agent/prompts.py  — system prompt (~4K lines of pentest methodology)
-                          ├── agent/ollama.py   — Ollama HTTP client (stdlib, no deps)
-                          └── agent/osint.py    — OSINT modules (crt.sh, DNS, WHOIS, Wayback, dorking)
+ Phase  1 │ Reconnaissance         → Headers, tech stack, directory bruteforce, sitemap
+ Phase  2 │ Authentication         → Default credentials, brute-force, login bypass
+ Phase  3 │ Authenticated Crawl    → Form discovery, parameter harvesting, ID collection
+ Phase  4 │ Session Management     → Cookie flags, session fixation, JWT analysis
+ Phase  5 │ Cross-Site Scripting   → Reflected, stored, DOM-based XSS
+ Phase  6 │ SQL Injection          → Error-based, blind boolean/time, auth bypass
+ Phase  7 │ Access Control & CSRF  → Unauthenticated access, CSRF token verification
+ Phase  8 │ Tech Fingerprinting    → Version detection, CVE lookup, JS static analysis
+ Phase  9 │ Advanced Web Attacks   → CORS, open redirect, CRLF injection, SSL/TLS
+ Phase 10 │ Protocol Attacks       → Host header injection, request smuggling, GraphQL
+ Phase 11 │ IDOR                   → Cross-user access control testing (2-account)
+ Phase 12 │ Reporting              → Aggregated findings, curl PoCs, CVSS, remediation
 ```
+
+Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands.
 
 ---
 
 ## Requirements
 
-- **Python 3.10+**
-- **[Ollama](https://ollama.com)** running locally with at least one model
-- **Linux** (tested on Ubuntu/Debian) — macOS should work but is untested
-- Optional: `nmap`, `nikto`, `gobuster`, `sqlmap` for system-level scanning
-- Optional: `tor` for anonymous routing
+| Requirement | Details |
+|-------------|---------|
+| **Python** | 3.10 or higher |
+| **Ollama** | Running locally — [install here](https://ollama.com) |
+| **OS** | Linux (tested on Ubuntu/Debian) — macOS may work |
+| **Optional** | `nmap`, `nikto`, `gobuster`, `sqlmap` for extended scanning |
+| **Optional** | `tor` for anonymous traffic routing |
 
 ## Installation
 
@@ -79,44 +95,63 @@ cd TheRobin
 bash setup.sh
 ```
 
-This creates a virtual environment, installs dependencies, and sets up the run script.
+The setup script creates a virtual environment, installs all dependencies, and generates the run script.
 
 ### Ollama Setup
 
-Install Ollama and pull a model:
-
 ```bash
+# Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull glm-4.7:cloud      # cloud-proxied, recommended — 198K context, fast, coding-specialized
+
+# Pull a model (cloud-proxied — recommended for best results)
+ollama pull glm-4.7:cloud
 ```
 
-**Cloud-proxied models** (via Ollama, data sent to provider):
-`glm-4.7:cloud`, `kimi-k2:1t-cloud`, `deepseek-v3.1:671b-cloud`, `qwen3-coder-next:cloud`
+<details>
+<summary><b>Available Models</b></summary>
 
-**Local models** (fully private, requires GPU):
-`qwen2.5-coder:32b`, `deepseek-coder-v2:16b`, `codellama:34b`, or any Ollama-compatible model
+**Cloud-proxied** (via Ollama infrastructure — data sent to provider):
+| Model | Notes |
+|-------|-------|
+| `glm-4.7:cloud` | Recommended — 198K context, coding-specialized, fast |
+| `kimi-k2:1t-cloud` | Strong reasoning, large context |
+| `deepseek-v3.1:671b-cloud` | High capability, slower |
+| `qwen3-coder-next:cloud` | Good coding performance |
 
-> **Note:** Cloud-proxied models (`:cloud` suffix) send prompts and target data through Ollama's cloud infrastructure to the model provider. For maximum privacy, use a locally-running model.
+**Local** (fully private — requires GPU with sufficient VRAM):
+| Model | VRAM | Notes |
+|-------|------|-------|
+| `qwen2.5-coder:32b` | ~20GB | Strong coding, good for pentesting |
+| `deepseek-coder-v2:16b` | ~10GB | Lighter option |
+| `codellama:34b` | ~20GB | Meta's code model |
+
+> Cloud-proxied models (`:cloud` suffix) route prompts and target data through Ollama's cloud infrastructure to the model provider. For sensitive engagements, use a locally-running model.
+
+</details>
+
+---
 
 ## Usage
 
+### Quick Start
+
 ```bash
-# Interactive mode
+# Interactive mode — configure target in the console
 ./run.sh
 
-# With target
+# Direct target
 ./run.sh -t https://target.com
 
-# With credentials
+# With credentials for authentication testing
 ./run.sh -t https://target.com -u admin -p password123
 
-# OSINT only (passive recon, no active testing)
+# OSINT-only mode (passive reconnaissance, no active testing)
 ./run.sh -t target.com --mode osint
 
-# Full engagement (OSINT + webapp testing)
+# Full engagement (OSINT recon + webapp testing)
 ./run.sh -t target.com --mode full
 
-# Through Tor
+# Route traffic through Tor
 ./run.sh -t https://target.com --tor
 
 # Specific model
@@ -125,90 +160,148 @@ ollama pull glm-4.7:cloud      # cloud-proxied, recommended — 198K context, fa
 
 ### Console Commands
 
-| Command | Description |
-|---------|-------------|
-| `/set TARGET <url>` | Set target URL |
-| `/set MODEL <name>` | Switch LLM model |
-| `/set COOKIE <string>` | Pre-authenticated session cookie (for 2FA apps) |
-| `/set TOR on\|off` | Toggle Tor proxy routing |
-| `/set SCOPE dom1,dom2` | Set in-scope domains |
-| `/options` | Show current session options |
-| `/model <name>` | Quick model switch |
-| `/report` | Generate final Markdown report |
-| `/clear` | Reset conversation history |
-| `/quit` | Exit |
-
-### Pre-Authenticated Cookie (2FA Targets)
-
-For targets with 2FA or complex auth that can't be automated:
-
-1. Log in manually in your browser
-2. Copy the cookies from DevTools (Application → Cookies → copy as string)
-3. Set it in TheRobin:
-
 ```
-/set COOKIE JSESSIONID=abc123; csrf_token=xyz789
+ /set TARGET <url>      Set the target URL
+ /set MODEL <name>      Switch the LLM model
+ /set COOKIE <string>   Set pre-authenticated session cookie (for 2FA apps)
+ /set TOR on|off        Toggle Tor SOCKS5 proxy routing
+ /set SCOPE dom1,dom2   Define in-scope domains
+ /options               Display current session configuration
+ /model <name>          Quick model switch
+ /report                Generate the final Markdown report
+ /clear                 Reset conversation history
+ /quit                  Exit TheRobin
 ```
 
-The agent will skip login testing and use your authenticated session for all phases.
+### Pre-Authenticated Sessions (2FA Targets)
+
+For targets with multi-factor authentication or complex login flows:
+
+1. Log in manually via your browser
+2. Open DevTools → Application → Cookies → copy the cookie string
+3. Pass it to TheRobin:
+
+```bash
+./run.sh -t https://target.com
+# then in console:
+/set COOKIE JSESSIONID=abc123; csrf_token=xyz789; session_id=def456
+```
+
+The agent loads your authenticated session and skips login-phase testing. All subsequent phases run with your active session — curl PoCs in the report will include the session cookies for reproducibility.
 
 ---
 
-## Vulnerable Test App
+## 🧪 Vulnerable Test App
 
-A deliberately vulnerable Flask app is included in `vuln_app/` for testing and demos:
-
-```bash
-cd vuln_app
-python3 app.py
-# Runs on http://localhost:5000
-```
-
-**Default credentials:** `admin/admin123`, `alice/password1`, `bob/123456`
-
-Covers OWASP Top 10: SQLi, XSS (reflected + stored), IDOR, CSRF, SSRF, command injection, insecure deserialization, broken access control, and more.
+An intentionally vulnerable Flask application is included in `vuln_app/` for safe testing and demonstrations.
 
 ```bash
-# Test TheRobin against the vuln app
+# Terminal 1 — start the vulnerable app
+cd vuln_app && python3 app.py
+# → http://localhost:5000
+
+# Terminal 2 — run TheRobin against it
 ./run.sh -t http://localhost:5000 -u admin -p admin123
 ```
 
+<details>
+<summary><b>Vulnerability Coverage (OWASP Top 10)</b></summary>
+
+| OWASP Category | Vulnerabilities |
+|---------------|-----------------|
+| A01 Broken Access Control | IDOR on profiles/invoices, admin panel without role check, privilege escalation |
+| A02 Cryptographic Failures | MD5 password hashes, sensitive data in plain cookies, weak session secret |
+| A03 Injection | SQLi (login + search), reflected XSS, stored XSS, OS command injection |
+| A04 Insecure Design | No account lockout, predictable password reset tokens |
+| A05 Security Misconfiguration | Missing security headers, debug mode, verbose errors, default credentials |
+| A06 Vulnerable Components | jQuery 1.6.1 (CVE-2011-4969), Bootstrap 3.3.6 |
+| A07 Auth Failures | Default creds (admin/admin123), no rate limiting, session fixation |
+| A08 Integrity Failures | No CSRF tokens, pickle deserialization endpoint |
+| A09 Logging Failures | Failed logins not logged, no audit trail |
+| A10 SSRF | Arbitrary URL fetch endpoint |
+
+**Default credentials:** `admin/admin123` · `alice/password1` · `bob/123456` · `charlie/letmein`
+
+</details>
+
 ---
 
-## Tor Support
+## 🧅 Tor / Anonymity Support
 
-Route all agent HTTP traffic through Tor for anonymity during authorized engagements:
+Route all agent-generated HTTP traffic through the Tor network:
 
 ```bash
 # Install and start Tor
-sudo apt install tor
-sudo systemctl start tor
+sudo apt install tor && sudo systemctl start tor
 
-# Use TheRobin through Tor
+# Launch with Tor
 ./run.sh -t https://target.com --tor
 ```
 
 Or toggle at runtime: `/set TOR on`
 
-What goes through Tor:
-- `web_request` tool (direct HTTP)
-- OSINT lookups (crt.sh, Wayback, DuckDuckGo)
-- Agent-written Python `requests` calls
+| Component | Routed Through Tor |
+|-----------|-------------------|
+| `web_request` tool | ✅ Yes |
+| OSINT lookups (crt.sh, Wayback, DuckDuckGo) | ✅ Yes |
+| Agent-written `requests` code | ✅ Yes |
+| Ollama API (localhost) | ❌ No — local, correct |
+| DNS lookups, WHOIS | ❌ No — system resolver |
 
-What stays direct (correct):
-- Ollama API (localhost)
-- DNS lookups, WHOIS (system resolver)
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        main.py (CLI)                        │
+├─────────────────────────────────────────────────────────────┤
+│                    app.py (Session Manager)                  │
+├──────────────────────────┬──────────────────────────────────┤
+│   agent/loop.py          │        ui/console.py             │
+│   (Agentic Loop)         │        (Rich TUI)                │
+├──────────────────────────┴──────────────────────────────────┤
+│                      agent/tools.py                         │
+│  ┌──────────┐ ┌──────┐ ┌───────────┐ ┌─────────┐ ┌──────┐  │
+│  │run_python│ │ bash │ │web_request│ │read_file│ │write │  │
+│  │  (REPL)  │ │      │ │           │ │         │ │_file │  │
+│  └──────────┘ └──────┘ └───────────┘ └─────────┘ └──────┘  │
+├─────────────────────────────────────────────────────────────┤
+│  agent/prompts.py    │  agent/ollama.py  │  agent/osint.py  │
+│  (4K lines of        │  (Ollama HTTP     │  (crt.sh, DNS,   │
+│   methodology)       │   client)         │   WHOIS, Wayback)│
+└─────────────────────────────────────────────────────────────┘
+```
+
+| File | Purpose |
+|------|---------|
+| `main.py` | CLI entry point — argument parsing |
+| `app.py` | Session management, command handling, option configuration |
+| `agent/loop.py` | Agentic loop — LLM ↔ tool execution cycle with context compaction |
+| `agent/tools.py` | Tool implementations (REPL, bash, HTTP, file I/O) + JSON schemas |
+| `agent/prompts.py` | System prompt — 4K lines of pentest methodology, code templates, confirmation logic |
+| `agent/ollama.py` | Ollama HTTP client (stdlib `urllib`, zero external deps) |
+| `agent/osint.py` | OSINT modules — crt.sh subdomains, DNS, WHOIS, Wayback, DuckDuckGo dorking |
+| `ui/console.py` | Rich-based terminal UI — panels, tool output blocks, status indicators |
 
 ---
 
 ## Disclaimer
 
-**This tool is for authorized security testing and educational purposes only.**
-
-Only use TheRobin against systems you own or have explicit written permission to test. Unauthorized access to computer systems is illegal. The authors are not responsible for any misuse of this tool.
-
-Always obtain proper authorization before conducting any penetration test.
+> **This tool is intended for authorized security testing and educational purposes only.**
+>
+> You must only use TheRobin against systems you own or have explicit written authorization to test. Unauthorized access to computer systems is a criminal offense in most jurisdictions. The authors assume no liability for misuse of this software.
+>
+> Always obtain proper written authorization before conducting any penetration test.
 
 ## License
 
-[MIT](LICENSE) — see LICENSE file for details.
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+
+**TheRobin** — *Think like an attacker. Test like an engineer. Report like a professional.*
+
+</div>
