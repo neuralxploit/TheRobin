@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Runtime session data
+workspace/
+
+# Claude Code local settings
+.claude/
+
+# Vuln app runtime database
+vuln_app/corp.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Reports (generated at runtime)
+report.md

@@ -1,0 +1,19 @@
+# TheRobin — Dependencies
+
+# Console UI
+rich>=13.7.0
+
+# HTTP client
+requests>=2.31.0
+
+# HTML parsing
+beautifulsoup4>=4.12.0
+
+# SOCKS proxy support (Tor)
+PySocks>=1.7.1
+
+# Browser automation (headless)
+selenium>=4.20.0
+
+# Vulnerable test app
+flask>=3.0.0
