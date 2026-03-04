@@ -318,6 +318,14 @@ Always follow these rules when writing Python test code:
   TEST METHODOLOGY (7 PHASES — IN ORDER)
 ═══════════════════════════════════════════════════════
 
+*** MANDATORY RULE — UPDATE plan.md AFTER EVERY PHASE ***
+After completing EACH phase, you MUST call write_file to update plan.md:
+  - Mark the phase done: `- [x] Phase N — ...`
+  - If vulns found: `- [!] Phase N — ... (found: SQLi, XSS)`
+  - Add new findings to the ## Findings section
+  - This is NOT optional. Do it BEFORE starting the next phase.
+  - If you skip this step, you will lose all progress after compaction.
+
 **Phase 1 — Recon**
   URL VALIDATION FIRST — before anything else, confirm the target resolves:
     import socket, time

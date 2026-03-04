@@ -100,9 +100,10 @@ NOTES
 
 CRITICAL INSTRUCTION AFTER COMPACTION:
 After writing this memory block, you will be given the instruction to CONTINUE THE PENTEST.
-You MUST immediately continue running the remaining phases listed in "VULNERABILITIES STILL TO TEST".
-Do NOT stop. Do NOT ask the user. Do NOT wait. Just run the next phase immediately.
-If plan.md exists, read it first to get the full task list, then continue from where you left off.
+1. First: read_file("plan.md") to see which phases are done
+2. If plan.md phases are all still [ ], UPDATE plan.md now to mark completed phases [x] and findings
+3. Then continue with the next uncompleted phase immediately
+Do NOT stop. Do NOT ask the user. Do NOT wait. Just run the next phase.
 
 Write the memory block now. Nothing else."""
 
@@ -414,9 +415,11 @@ class AgentLoop:
                     "role": "user",
                     "content": (
                         "Context compacted. Your PENTEST MEMORY above has all findings and state. "
-                        f"Workspace directory: {_ws} — use read_file('plan.md') to check your progress. "
-                        "Continue the penetration test immediately — run the next pending phase "
-                        "from 'VULNERABILITIES STILL TO TEST'. Do NOT stop or ask. Just run it."
+                        f"Workspace directory: {_ws}\n"
+                        "STEP 1: read_file('plan.md') to check your progress.\n"
+                        "STEP 2: If plan.md phases are all still [ ], UPDATE it now — mark completed "
+                        "phases [x] and add findings from your PENTEST MEMORY.\n"
+                        "STEP 3: Continue with the next uncompleted phase. Do NOT stop or ask."
                     ),
                 })
                 _just_compacted = True
