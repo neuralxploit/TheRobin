@@ -248,12 +248,13 @@ class PentestConsole:
         self.console.print()
         self.console.print(
             "  [dim]Commands:[/dim] "
-            "[bold]/clear[/bold]  "
-            "[bold]/set <opt> <val>[/bold]  "
-            "[bold]/options[/bold]  "
-            "[bold]/model <name>[/bold]  "
-            "[bold]/report[/bold]  "
-            "[bold]/quit[/bold]"
+            "[bold]clear[/bold]  "
+            "[bold]set <opt> <val>[/bold]  "
+            "[bold]options[/bold]  "
+            "[bold]model <name>[/bold]  "
+            "[bold]report[/bold]  "
+            "[bold]help[/bold]  "
+            "[bold]quit[/bold]"
         )
         self.console.print(Rule(style="dim red"))
         self.console.print()
@@ -655,8 +656,9 @@ class PentestConsole:
         self.console.print(
             "  [dim]Commands:[/dim]  "
             "[bold cyan]set[/bold cyan] [yellow]<OPTION>[/yellow] [white]<value>[/white]   "
-            "[bold cyan]show[/bold cyan]   "
+            "[bold cyan]options[/bold cyan]   "
             "[bold cyan]run[/bold cyan]   "
+            "[bold cyan]help[/bold cyan]   "
             "[bold cyan]quit[/bold cyan]"
         )
         self.console.print()

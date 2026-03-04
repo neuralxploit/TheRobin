@@ -137,7 +137,11 @@ class App:
             if not user_input:
                 continue
 
-            if user_input.startswith("/"):
+            # Check if it's a command (with or without / prefix)
+            first_word = user_input.lstrip("/").split(None, 1)[0].lower()
+            known_cmds = ("quit", "exit", "clear", "set", "options", "show",
+                          "model", "compact", "report", "help")
+            if user_input.startswith("/") or first_word in known_cmds:
                 handled = self._handle_command(user_input)
                 if not handled:
                     self.ui.print_system(f"Unknown command: {user_input}")
@@ -203,7 +207,9 @@ class App:
                 self.ui.print_system("TARGET is required. Example:  set TARGET https://target.com")
                 continue
 
-            parts = line.split(None, 2)
+            # Strip leading / so both "/set" and "set" work the same
+            normalized = line.lstrip("/")
+            parts = normalized.split(None, 2)
             cmd = parts[0].lower()
 
             if cmd in ("run", "start", "go", "exploit"):
@@ -216,10 +222,13 @@ class App:
                 self._running = False
                 return
 
-            elif cmd == "show":
+            elif cmd in ("show", "options"):
                 self.ui.print_options_table(self.session)
 
-            elif cmd == "help":
+            elif cmd in ("clear",):
+                self.ui.print_system("Nothing to clear — pentest has not started yet.")
+
+            elif cmd in ("help",):
                 self.ui.print_system("Available options: TARGET  MODEL  USERNAME  PASSWORD  COOKIE  SCOPE  MODE  TOR")
                 self.ui.print_system("  set TARGET   https://target.com")
                 self.ui.print_system("  set USERNAME admin")
@@ -230,6 +239,14 @@ class App:
                 self.ui.print_system("  set TOR      on | off  (route HTTP through Tor localhost:9050)")
                 self.ui.print_system("  set MODEL    glm-4.7:cloud")
                 self.ui.print_system("  run          — start the pentest")
+
+            elif cmd == "model" and len(parts) >= 2:
+                val = parts[1].strip()
+                err = self._set_option("MODEL", val)
+                if err:
+                    self.ui.print_system(f"  [!] {err}")
+                else:
+                    self.ui.print_system(f"  MODEL => {self.session['MODEL']}")
 
             elif cmd == "set" and len(parts) >= 3:
                 key = parts[1].upper()
@@ -244,9 +261,12 @@ class App:
             elif cmd == "set" and len(parts) == 2:
                 self.ui.print_system(f"  Usage: set {parts[1].upper()} <value>")
 
+            elif cmd == "report":
+                self.ui.print_system("Cannot generate report — pentest has not started yet. Type 'run' first.")
+
             else:
                 self.ui.print_system(
-                    f"  Unknown command: {cmd}. "
+                    f"  Unknown command: {line.strip()}. "
                     "Use: set <OPTION> <value>  |  show  |  run  |  help"
                 )
 
@@ -359,16 +379,18 @@ class App:
 
     def _handle_command(self, cmd: str) -> bool:
         """Handle /commands. Returns True if handled."""
-        parts = cmd.split(None, 1)
+        # Strip leading / so both "/clear" and "clear" work
+        normalized = cmd.lstrip("/")
+        parts = normalized.split(None, 1)
         command = parts[0].lower()
         arg = parts[1] if len(parts) > 1 else ""
 
-        if command == "/quit" or command == "/exit":
+        if command in ("quit", "exit"):
             if self.ui.confirm_quit():
                 self._running = False
             return True
 
-        elif command == "/clear":
+        elif command == "clear":
             self.agent.clear_history()
             from agent.tools import reset_repl, reset_browser
             reset_repl()     # kill REPL so all variables are gone
@@ -376,8 +398,8 @@ class App:
             self.ui.print_system("Session history, REPL state, and browser cleared.")
             return True
 
-        elif command == "/set":
-            # /set KEY VALUE  — update a session option mid-session
+        elif command == "set":
+            # set KEY VALUE  — update a session option mid-session
             set_parts = arg.split(None, 1)
             if len(set_parts) < 2:
                 self.ui.print_options_table(self.session)
@@ -391,11 +413,11 @@ class App:
                 self.ui.print_system(f"  {key} => {self.session[key]}")
             return True
 
-        elif command == "/options":
+        elif command in ("options", "show"):
             self.ui.print_options_table(self.session)
             return True
 
-        elif command == "/model":
+        elif command == "model":
             if arg:
                 self.agent.set_model(arg)
                 self.model = arg
@@ -407,12 +429,12 @@ class App:
                 self.ui.print_system(f"Current:   {self.model}")
             return True
 
-        elif command == "/compact":
+        elif command == "compact":
             info = self.agent.compact()
             self.ui.print_system(info)
             return True
 
-        elif command == "/report":
+        elif command == "report":
             self._run_agent(
                 "Please generate a comprehensive penetration test report of everything we've found "
                 "so far. Save it to 'report.md' using write_file. Include: Executive Summary, "
@@ -420,7 +442,7 @@ class App:
             )
             return True
 
-        elif command == "/help":
+        elif command == "help":
             self.ui.print_system("Commands:")
             self.ui.print_system("  /clear              — reset conversation history and REPL state")
             self.ui.print_system("  /compact            — free context by summarising old tool results")
