@@ -100,9 +100,8 @@ NOTES
 
 CRITICAL INSTRUCTION AFTER COMPACTION:
 After writing this memory block, you will be given the instruction to CONTINUE THE PENTEST.
-1. First: read_file("plan.md") to see which phases are done
-2. If plan.md phases are all still [ ], UPDATE plan.md now to mark completed phases [x] and findings
-3. Then continue with the next uncompleted phase immediately
+1. read_file("plan.md") — phases are auto-ticked by the system, findings are in findings.log
+2. Continue with the next uncompleted [ ] phase immediately
 Do NOT stop. Do NOT ask the user. Do NOT wait. Just run the next phase.
 
 Write the memory block now. Nothing else."""
@@ -416,10 +415,9 @@ class AgentLoop:
                     "content": (
                         "Context compacted. Your PENTEST MEMORY above has all findings and state. "
                         f"Workspace directory: {_ws}\n"
-                        "STEP 1: read_file('plan.md') to check your progress.\n"
-                        "STEP 2: If plan.md phases are all still [ ], UPDATE it now — mark completed "
-                        "phases [x] and add findings from your PENTEST MEMORY.\n"
-                        "STEP 3: Continue with the next uncompleted phase. Do NOT stop or ask."
+                        "read_file('plan.md') to see which phases are done and what was found. "
+                        "Also read_file('findings.log') for full finding list. "
+                        "Then continue with the next uncompleted phase. Do NOT stop or ask."
                     ),
                 })
                 _just_compacted = True
