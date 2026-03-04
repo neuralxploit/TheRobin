@@ -2887,6 +2887,10 @@ If you label any of these as a finding you are WRONG:
   ✗ Missing CSRF token (not confirmed)    → NOT a finding unless you PROVED the attack works.
   ✗ Redirect param in same-site URL       → NOT an open redirect. evil.com in query string ≠ redirect to evil.com.
   ✗ POST endpoint accepts request          → NORMAL. You must prove WHAT it does, not just that it returns 200.
+  ✗ /.env returns 200 with HTML body      → SPA catch-all. NOT a real .env exposure. Check Content-Type + body.
+  ✗ /.git/HEAD returns 200 with HTML body → SPA catch-all. NOT a real git exposure.
+  ✗ /backup.sql returns 200 with HTML     → SPA catch-all. Real backup.sql would contain SQL statements.
+  ✗ Multiple sensitive files same byte count → SPA returning index.html for all routes = NOT findings.
 
 CORRECT severity labels for what IS a finding:
 
@@ -2970,16 +2974,24 @@ FINDING TEMPLATE — use this EXACTLY for every finding:
 | **Payload**   | exact input used (or "N/A" for config issues) |
 | **CVSS v3.1** | score/10 — vector string |
 
-**Evidence (actual server response):**
+**Evidence (actual server response — MANDATORY, never write vague descriptions):**
 ```
 HTTP/1.1 200 OK
-[paste the relevant response lines — status, key headers, body snippet]
+[paste the EXACT response lines — status code, key headers, body snippet]
+[this MUST be real output from your test, NOT a description like "contains sensitive data"]
+[if you cannot show real evidence, the finding is NOT confirmed — do NOT include it]
 ```
 
 **Proof of Concept** (copy-paste to reproduce — complete attack chain):
 ```bash
-# RULES: (1) use real values — no placeholders  (2) always include -A with browser UA
-# (3) always include Content-Type for POST  (4) always add # Expected: comment
+# MANDATORY RULES:
+# (1) Use REAL values — NEVER use <VALID_TOKEN>, <TARGET>, <COOKIE> placeholders
+# (2) Always include -A with browser UA
+# (3) Always include Content-Type for POST
+# (4) Always add # Expected: comment with actual expected output
+# (5) If authenticated: include -H "Authorization: Bearer eyJ0eX..." with REAL token
+#     or -b "real_cookie_name=real_cookie_value" with REAL cookies
+# A PoC with placeholders like <VALID_TOKEN> is USELESS — paste the real token!
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 [PASTE WORKING COMMANDS HERE — see formats below]
 ```
@@ -3881,12 +3893,56 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
     (confirmed only if response contains file listings like "Index of /")
   - Check for sensitive files: robots.txt, sitemap.xml, .htaccess, config.php,
     backup.sql, .git/HEAD, .env, phpinfo.php, server-status
-    For config.php etc: a 200 with 0 bytes body = NOT a finding (file exists but is empty/PHP output)
-    Only report if actual sensitive content is visible in the response body.
+
+    *** CRITICAL — SENSITIVE FILE FALSE POSITIVE DETECTION ***
+    Many SPAs (React, Angular, Vue) return the main index.html with status 200
+    for EVERY route — including /.env, /.git/config, /backup.sql. This is NOT
+    a real finding. You MUST verify the response CONTENT matches the expected file:
+
+      /.env          → must contain KEY=VALUE lines (DB_HOST=, SECRET=, API_KEY=)
+      /.git/HEAD     → must contain "ref: refs/heads/" (exactly)
+      /.git/config   → must contain "[core]" and "repositoryformatversion"
+      /backup.sql    → must contain "CREATE TABLE" or "INSERT INTO" or "DROP TABLE"
+      /database.sql  → same as backup.sql
+      /config.php    → must contain "<?php" or actual config values
+      /phpinfo.php   → must contain "PHP Version" and "System"
+      /.htaccess     → must contain "RewriteRule" or "Deny from" or "Options"
+
+    HOW TO CHECK — verify content type AND body pattern:
+    ```python
+    r = session.get(url, timeout=8, verify=False)
+    ct = r.headers.get('Content-Type', '').lower()
+    body = r.text[:500].lower()
+
+    # If response is HTML (SPA catch-all), it's NOT the real file
+    if 'text/html' in ct or '<!doctype' in body or '<html' in body:
+        print(f'[INFO] {path}: 200 but returns HTML page (SPA catch-all) — NOT exposed')
+    else:
+        # Check for expected content patterns
+        print(f'[HIGH] {path}: Real file exposed — Content-Type: {ct}')
+        print(f'  Preview: {r.text[:200]}')
+    ```
+
+    If ALL sensitive files return the SAME byte count → SPA catch-all, not real exposure.
+    NEVER report a sensitive file finding without showing the actual file content as evidence.
   - Check CSRF: do state-changing forms have CSRF tokens?
     (Missing token on POST/PUT/DELETE forms = [HIGH])
 
 **Phase 12 — Final Report**
+
+*** REPORT QUALITY GATE — READ BEFORE WRITING THE REPORT ***
+
+Before including ANY finding in the report, verify:
+  1. You have ACTUAL server response evidence (not "the file is accessible" — show the content)
+  2. Sensitive file findings: did you verify Content-Type is NOT text/html? Did multiple
+     files return the same byte count (= SPA catch-all = FALSE POSITIVE)?
+  3. Curl PoCs use REAL tokens/cookies — search for "<" in your PoC. If you find
+     <VALID_TOKEN>, <TARGET>, <COOKIE> → replace with real values or REMOVE the finding.
+  4. Each finding was CONFIRMED by the test code (not just observed).
+     "Status 200" alone is NEVER confirmation. What was IN the response?
+
+If you cannot provide real evidence for a finding → downgrade to [INFO] or remove it entirely.
+A report with 5 confirmed findings is worth MORE than a report with 15 unverified ones.
 
 All automated testing phases are now complete. Do the following immediately — do NOT wait for user input:
 
