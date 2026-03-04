@@ -484,10 +484,22 @@ _FINDING_RE = _re.compile(
     r'\[(?P<sev>CRITICAL|HIGH|MEDIUM|LOW)\]\s*(?P<desc>.+)',
     _re.IGNORECASE,
 )
+
+# Match phase references in output — various formats the LLM uses:
+#   "PHASE 2 — SECURITY HEADERS"        (start)
+#   "Phase 3 COMPLETE"                   (end)
+#   "PHASE 2-4: Security Headers..."     (range)
+#   "PHASE 5-6: XSS and SQL Injection"  (range)
+#   "[OK] Phase 1 initial recon complete"
+_PHASE_RE = _re.compile(
+    r'PHASE\s+(\d+)(?:\s*[-–]\s*(\d+))?',
+    _re.IGNORECASE,
+)
 _PHASE_COMPLETE_RE = _re.compile(
     r'Phase\s+(\d+)\b.*(?:complete|done|finished)',
     _re.IGNORECASE,
 )
+
 
 def _auto_track(output: str):
     """Parse tool output and auto-update plan.md + findings.log."""
@@ -504,7 +516,6 @@ def _auto_track(output: str):
         if m:
             sev = m.group("sev").upper()
             desc = m.group("desc").strip()[:200]
-            # Deduplicate within this output
             key = f"{sev}:{desc[:60]}"
             if key not in seen:
                 seen.add(key)
@@ -523,57 +534,69 @@ def _auto_track(output: str):
         except Exception:
             pass
 
-    # ── Detect phase completions and update plan.md ───────────────────────
-    completed_phases = set()
+    # ── Detect which phases this output covers ────────────────────────────
+    # Collect ALL phase numbers mentioned (start headers, complete markers, ranges)
+    touched_phases = set()
+
+    for m in _PHASE_RE.finditer(output):
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else start
+        for p in range(start, end + 1):
+            touched_phases.add(p)
+
     for m in _PHASE_COMPLETE_RE.finditer(output):
-        completed_phases.add(int(m.group(1)))
+        touched_phases.add(int(m.group(1)))
 
-    if completed_phases and plan_path.exists():
-        try:
-            plan = plan_path.read_text()
-            changed = False
-            for phase_num in completed_phases:
-                # Find findings for this phase from the current output
-                phase_findings = []
-                for f in new_findings:
-                    if any(s in f for s in ["CRITICAL", "HIGH"]):
-                        phase_findings.append(f.split("] ", 1)[1][:40] if "] " in f else f[:40])
+    if not touched_phases or not plan_path.exists():
+        return
 
-                # Mark phase done in plan.md
-                old_pattern = f"- [ ] Phase {phase_num} "
-                if old_pattern in plan:
-                    if phase_findings:
-                        short = ", ".join(phase_findings[:3])
-                        new_mark = f"- [!] Phase {phase_num} "
-                        # Add finding summary on the same line
-                        plan_lines = plan.split("\n")
-                        for i, ln in enumerate(plan_lines):
-                            if old_pattern in ln:
-                                base = ln.replace("- [ ]", "- [!]")
-                                plan_lines[i] = f"{base}  (found: {short})"
-                                changed = True
-                                break
-                        plan = "\n".join(plan_lines)
-                    else:
-                        plan = plan.replace(old_pattern, f"- [x] Phase {phase_num} ", 1)
+    # ── Update plan.md ────────────────────────────────────────────────────
+    try:
+        plan = plan_path.read_text()
+        changed = False
+
+        # Collect HIGH+ findings for annotation
+        high_findings = [
+            (f.split("] ", 1)[1][:40] if "] " in f else f[:40])
+            for f in new_findings
+            if any(s in f for s in ["CRITICAL", "HIGH"])
+        ]
+
+        for phase_num in sorted(touched_phases):
+            old_pattern = f"- [ ] Phase {phase_num} "
+            if old_pattern not in plan:
+                continue  # already ticked or doesn't exist
+
+            if high_findings:
+                short = ", ".join(high_findings[:3])
+                plan_lines = plan.split("\n")
+                for i, ln in enumerate(plan_lines):
+                    if old_pattern in ln:
+                        base = ln.replace("- [ ]", "- [!]")
+                        plan_lines[i] = f"{base}  (found: {short})"
                         changed = True
+                        break
+                plan = "\n".join(plan_lines)
+            else:
+                plan = plan.replace(old_pattern, f"- [x] Phase {phase_num} ", 1)
+                changed = True
 
-            # Append new HIGH+ findings to the ## Findings section
-            high_findings = [f for f in new_findings if any(
+        # Append HIGH+ findings to ## Findings section
+        if new_findings and "## Findings" in plan:
+            high_entries = [f for f in new_findings if any(
                 s in f for s in ["[CRITICAL]", "[HIGH]"]
             )]
-            if high_findings and "## Findings" in plan:
-                findings_idx = plan.index("## Findings")
-                rest = plan[findings_idx:]
-                for f in high_findings:
+            if high_entries:
+                rest = plan[plan.index("## Findings"):]
+                for f in high_entries:
                     if f not in rest:
                         plan = plan.rstrip() + f"\n- {f}\n"
                         changed = True
 
-            if changed:
-                plan_path.write_text(plan)
-        except Exception:
-            pass
+        if changed:
+            plan_path.write_text(plan)
+    except Exception:
+        pass
 
 
 def run_python(code: str) -> dict:
