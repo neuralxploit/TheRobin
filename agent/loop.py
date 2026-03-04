@@ -409,10 +409,12 @@ class AgentLoop:
                 )
                 # Nudge the model to keep running after compaction — without this
                 # the model often stops and waits for user input instead of continuing.
+                from agent.tools import WORKSPACE_DIR as _ws
                 self.history.append({
                     "role": "user",
                     "content": (
                         "Context compacted. Your PENTEST MEMORY above has all findings and state. "
+                        f"Workspace directory: {_ws} — use read_file('plan.md') to check your progress. "
                         "Continue the penetration test immediately — run the next pending phase "
                         "from 'VULNERABILITIES STILL TO TEST'. Do NOT stop or ask. Just run it."
                     ),
