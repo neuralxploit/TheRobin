@@ -427,6 +427,26 @@ class AgentLoop:
                 content, tool_calls = self._call_ollama(on_token=None)
             except ConnectionError as e:
                 self.on_status("")
+                err_lower = str(e).lower()
+                retryable = any(k in err_lower for k in (
+                    "cloud connection dropped", "unexpected eof",
+                    "connection refused", "connection reset",
+                    "503", "502", "service unavailable", "bad gateway",
+                ))
+                if retryable and iteration < max_iterations:
+                    self.on_token(
+                        f"\n> **Cloud connection dropped** — waiting 10s then auto-resuming...\n\n"
+                    )
+                    time.sleep(10)
+                    # Nudge agent to continue from where it left off
+                    self.history.append({
+                        "role": "user",
+                        "content": (
+                            "Connection was temporarily lost. Continue the penetration test "
+                            "exactly where you left off. Check plan.md if needed."
+                        ),
+                    })
+                    continue
                 self.on_token(f"\n**Connection error:** {e}\n")
                 return
             except Exception as e:
