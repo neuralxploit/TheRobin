@@ -13,7 +13,9 @@
 
 # TheRobin
 
-**Autonomous AI-powered penetration testing and OSINT engine.** TheRobin uses local LLMs via [Ollama](https://ollama.com) to perform real-world web application security assessments — no cloud API keys, no data leaving your machine.
+**Autonomous AI-powered penetration testing and OSINT engine.** TheRobin uses LLMs via [Ollama](https://ollama.com) to perform real-world web application security assessments — no cloud API keys required.
+
+It works with both **local models** (data stays on your machine) and **cloud-proxied models** via Ollama (e.g. `glm-4.7:cloud`, `kimi-k2:1t-cloud`). Choose based on your privacy requirements.
 
 The AI agent writes and executes Python code in a persistent REPL (like a Jupyter notebook), runs system tools (nmap, sqlmap, gobuster), and methodically works through a 12-phase pentest methodology. It thinks like a real attacker, tests like an engineer, and reports like a professional.
 
@@ -22,7 +24,7 @@ The AI agent writes and executes Python code in a persistent REPL (like a Jupyte
 ## Features
 
 - **Fully autonomous** — give it a target, it runs a complete pentest (12 phases)
-- **Local LLMs only** — runs via Ollama, your data never leaves your machine
+- **Ollama-powered** — works with local models (fully private) or cloud-proxied models via Ollama
 - **Persistent REPL** — agent builds on previous code, maintains session state across calls
 - **OSINT mode** — passive recon: subdomain enum (crt.sh), DNS, WHOIS, Wayback, DuckDuckGo dorking
 - **Pre-authenticated sessions** — paste a cookie string for 2FA/complex auth targets
@@ -85,10 +87,16 @@ Install Ollama and pull a model:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull glm-4.7:cloud      # recommended — 198K context, fast, coding-specialized
+ollama pull glm-4.7:cloud      # cloud-proxied, recommended — 198K context, fast, coding-specialized
 ```
 
-Other compatible models: `kimi-k2:1t-cloud`, `deepseek-v3.1:671b-cloud`, `qwen3-coder-next:cloud`
+**Cloud-proxied models** (via Ollama, data sent to provider):
+`glm-4.7:cloud`, `kimi-k2:1t-cloud`, `deepseek-v3.1:671b-cloud`, `qwen3-coder-next:cloud`
+
+**Local models** (fully private, requires GPU):
+`qwen2.5-coder:32b`, `deepseek-coder-v2:16b`, `codellama:34b`, or any Ollama-compatible model
+
+> **Note:** Cloud-proxied models (`:cloud` suffix) send prompts and target data through Ollama's cloud infrastructure to the model provider. For maximum privacy, use a locally-running model.
 
 ## Usage
 
