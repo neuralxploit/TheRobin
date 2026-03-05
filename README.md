@@ -76,6 +76,30 @@ TheRobin follows a structured 12-phase approach covering the OWASP Top 10 and be
 
 Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands.
 
+### Screenshot-Verified Reporting
+
+Every vulnerability finding goes through a strict evidence pipeline before it reaches the final report:
+
+```
+ Discovery → Confirmation → Screenshot Verification → Report Entry
+     ↓             ↓                  ↓                     ↓
+  Detect via    Re-test to       Open in browser,      Include all 4:
+  requests/     confirm real      take screenshot,      test script,
+  scanning      behavior          AI analyzes image     server response,
+                                                        screenshot proof,
+                                                        working curl PoC
+```
+
+**What every finding includes:**
+- **Test Script** — the actual Python code used to detect and confirm the vulnerability
+- **Server Response** — real HTTP response data (status, headers, body excerpt)
+- **Screenshot Proof** — browser screenshot visually confirming the issue (requires vision model)
+- **curl PoC** — working `curl` command with real cookies/tokens for manual reproduction
+
+**False positive elimination:** The AI opens each finding URL in the browser and screenshots it. If the screenshot shows a 404, error page, or WAF block instead of the claimed vulnerability, the finding is automatically removed. No more phantom findings.
+
+> **Note:** Screenshot verification requires a vision-capable model (`kimi-k2.5:cloud`). Non-vision models still produce reports with test scripts, server responses, and curl PoCs but skip visual confirmation.
+
 ---
 
 ## Requirements
@@ -85,6 +109,7 @@ Each finding is **confirmed before reporting** — the agent parses response bod
 | **Python** | 3.10 or higher |
 | **Ollama** | Running locally — [install here](https://ollama.com) |
 | **OS** | Linux (tested on Ubuntu/Debian) — macOS may work |
+| **Optional** | `chromium` for browser vision / screenshot verification (`sudo snap install chromium`) |
 | **Optional** | `nmap`, `nikto`, `gobuster`, `sqlmap` for extended scanning |
 | **Optional** | `tor` for anonymous traffic routing |
 

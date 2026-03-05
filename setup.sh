@@ -49,7 +49,17 @@ pip install --upgrade pip --quiet
 pip install -r requirements.txt --quiet
 
 echo "  [OK] Dependencies installed:"
-pip show rich requests beautifulsoup4 PySocks 2>/dev/null | grep -E "^(Name|Version):" | paste - - | awk '{print "       " $0}'
+pip show rich requests beautifulsoup4 PySocks selenium 2>/dev/null | grep -E "^(Name|Version):" | paste - - | awk '{print "       " $0}'
+
+# Check for Chromium (needed for browser vision)
+echo ""
+if command -v chromium-browser &>/dev/null || command -v chromium &>/dev/null || [ -f /snap/chromium/current/usr/lib/chromium-browser/chrome ]; then
+    echo "  [OK] Chromium found (browser vision enabled)"
+else
+    echo "  [WARN] Chromium not found — browser screenshot features will be disabled"
+    echo "         Install with: sudo snap install chromium"
+    echo "         Or: sudo apt install chromium-browser"
+fi
 
 # Create run script
 cat > run.sh << 'EOF'
@@ -66,6 +76,6 @@ echo "  │  Setup complete!                                  │"
 echo "  │                                                   │"
 echo "  │  Start console:  ./run.sh                         │"
 echo "  │  With target:    ./run.sh -t http://target.com    │"
-echo "  │  With model:     ./run.sh -m kimi-k2:1t-cloud     │"
+echo "  │  With model:     ./run.sh -m kimi-k2.5:cloud       │"
 echo "  └──────────────────────────────────────────────────┘"
 echo ""
