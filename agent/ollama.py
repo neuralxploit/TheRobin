@@ -43,6 +43,8 @@ def _estimate_tokens(messages: list[dict]) -> int:
         tc = m.get("tool_calls")
         if tc:
             total += len(str(tc))
+        # Don't count images — they are processed separately by the vision model
+        # and don't consume text context tokens
     return total // 4
 
 

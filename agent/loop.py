@@ -127,6 +127,8 @@ def _dumb_compact(history: list[dict]) -> list[dict]:
     compacted_old = []
     for m in old:
         if m.get("role") == "tool":
+            # Strip images from old tool results — screenshots are ephemeral
+            m = {k: v for k, v in m.items() if k != "images"}
             content = m.get("content", "")
             try:
                 data = json.loads(content)
@@ -212,6 +214,7 @@ class AgentLoop:
             if role == "system":
                 continue          # skip big system prompt
             elif role == "tool":
+                # Skip images in summary — screenshots are ephemeral
                 content = m.get("content", "")
                 try:
                     data = json.loads(content)
@@ -483,7 +486,19 @@ class AgentLoop:
                     result = execute_tool(name, args)
                     self.on_tool_result(name, result)
 
-                    self.history.append({"role": "tool", "content": result})
+                    # Vision support: extract screenshot_base64 from browser_action
+                    # results and attach as an image for vision-capable models.
+                    # Strip the base64 from stored content to save context tokens.
+                    tool_msg = {"role": "tool", "content": result}
+                    try:
+                        rdata = json.loads(result)
+                        if "screenshot_base64" in rdata:
+                            b64 = rdata.pop("screenshot_base64")
+                            tool_msg["content"] = json.dumps(rdata)
+                            tool_msg["images"] = [b64]
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    self.history.append(tool_msg)
 
                 continue
 

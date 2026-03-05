@@ -266,44 +266,101 @@ _repl = _PersistentREPL(_PYTHON)
 
 class _BrowserSession:
     """
-    A persistent headless Firefox browser driven by Selenium.
+    A persistent headless Chromium browser driven by Selenium.
     One instance per session — state (cookies, login, navigation) persists
     across browser_action calls, just like a real browser tab.
+
+    The 'screenshot' action returns base64 image data + simplified DOM
+    so vision-capable models (Kimi K2.5) can see and reason about pages.
     """
 
     def __init__(self):
         self._driver = None
         self._lock = threading.Lock()
 
-    def _find_firefox_binary(self) -> str:
-        """Locate the real Firefox binary (handles snap wrapper)."""
-        candidates = [
-            "/snap/firefox/current/usr/lib/firefox/firefox",  # snap real binary
-            "/usr/lib/firefox/firefox",
-            "/usr/bin/firefox-esr",
+    def _find_chromium(self) -> tuple:
+        """Locate Chromium binary and chromedriver (handles snap)."""
+        binary_candidates = [
+            "/snap/chromium/current/usr/lib/chromium-browser/chrome",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome",
         ]
-        for c in candidates:
-            if os.path.isfile(c) and os.access(c, os.X_OK):
-                return c
-        return "firefox"  # fallback — let Selenium find it
+        driver_candidates = [
+            "/snap/chromium/current/usr/lib/chromium-browser/chromedriver",
+            "/usr/bin/chromedriver",
+            "/usr/local/bin/chromedriver",
+        ]
+        binary = next(
+            (c for c in binary_candidates if os.path.isfile(c) and os.access(c, os.X_OK)),
+            None,
+        )
+        driver = next(
+            (c for c in driver_candidates if os.path.isfile(c) and os.access(c, os.X_OK)),
+            None,
+        )
+        return binary, driver
 
     def _start(self):
         from selenium import webdriver
-        from selenium.webdriver.firefox.options import Options
-        from selenium.webdriver.firefox.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
 
+        binary, chromedriver = self._find_chromium()
+        if not binary:
+            raise RuntimeError(
+                "Chromium not found. Install: sudo snap install chromium"
+            )
+
+        tmp_dir = tempfile.mkdtemp(prefix="sel_")
         opts = Options()
-        opts.binary_location = self._find_firefox_binary()
-        opts.add_argument("--headless")
-        opts.add_argument("--width=1920")
-        opts.add_argument("--height=1080")
-        opts.set_preference("security.tls.version.min", 1)
-        opts.set_preference("accept_untrusted_certs", True)
+        opts.binary_location = binary
+        opts.add_argument("--headless=new")
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--window-size=1280,900")
+        opts.add_argument(f"--user-data-dir={tmp_dir}")
+        opts.add_argument("--ignore-certificate-errors")
+        opts.accept_insecure_certs = True
 
-        service = Service(log_output=subprocess.DEVNULL)
-        self._driver = webdriver.Firefox(options=opts, service=service)
+        svc_kwargs = {"log_output": subprocess.DEVNULL}
+        if chromedriver:
+            svc_kwargs["executable_path"] = chromedriver
+        service = Service(**svc_kwargs)
+        self._driver = webdriver.Chrome(options=opts, service=service)
         self._driver.set_page_load_timeout(30)
         self._driver.implicitly_wait(5)
+        # Create live viewer HTML in workspace
+        self._create_viewer()
+
+    def _create_viewer(self):
+        """Create an auto-refreshing HTML page to view browser screenshots live."""
+        viewer = WORKSPACE_DIR / "browser_viewer.html"
+        viewer.write_text("""<!DOCTYPE html>
+<html><head><title>TheRobin — Live Browser View</title>
+<style>
+body{background:#1a1a2e;color:#e0e0e0;font-family:monospace;text-align:center;margin:0;padding:20px}
+h1{color:#0ff;font-size:1.5em}
+img{max-width:100%;border:2px solid #0ff;margin-top:10px}
+#status{color:#888;font-size:0.9em;margin-top:5px}
+</style>
+<script>
+let ts=0;
+function refresh(){
+  const img=document.getElementById('shot');
+  img.src='latest_screenshot.png?t='+Date.now();
+  document.getElementById('status').textContent='Last refresh: '+new Date().toLocaleTimeString();
+}
+setInterval(refresh,2000);
+window.onload=refresh;
+</script>
+</head><body>
+<h1>TheRobin — Live Browser View</h1>
+<p id="status">Waiting for screenshots...</p>
+<img id="shot" alt="Latest screenshot" onerror="this.style.display='none'" onload="this.style.display='block'">
+</body></html>""", encoding="utf-8")
 
     def _ensure(self):
         if self._driver is None:
@@ -314,11 +371,39 @@ class _BrowserSession:
             try:
                 self._ensure()
             except Exception as e:
-                return {"error": f"Browser failed to start: {e}. Is geckodriver installed?"}
+                return {"error": f"Browser failed to start: {e}. Is chromium installed?"}
             try:
                 return self._dispatch(action, **kwargs)
             except Exception as e:
                 return {"error": str(e)}
+
+    @staticmethod
+    def _strip_dom(html: str, max_len: int = 3000) -> str:
+        """Strip JS/CSS/attributes from HTML, keep structure + text + forms."""
+        try:
+            from bs4 import BeautifulSoup, Comment
+            soup = BeautifulSoup(html, "html.parser")
+            # Remove script, style, svg, noscript
+            for tag in soup.find_all(["script", "style", "svg", "noscript", "link", "meta"]):
+                tag.decompose()
+            # Remove comments
+            for c in soup.find_all(string=lambda t: isinstance(t, Comment)):
+                c.extract()
+            # Strip most attributes, keep only useful ones
+            keep_attrs = {"href", "src", "action", "method", "name", "id",
+                          "type", "value", "placeholder", "for", "role"}
+            for tag in soup.find_all(True):
+                attrs = dict(tag.attrs)
+                for attr in attrs:
+                    if attr not in keep_attrs:
+                        del tag.attrs[attr]
+            text = soup.prettify()
+            if len(text) > max_len:
+                text = text[:max_len] + "\n... (truncated)"
+            return text
+        except Exception:
+            # Fallback: just truncate raw HTML
+            return html[:max_len]
 
     def _by(self, by_str: str):
         from selenium.webdriver.common.by import By
@@ -326,6 +411,23 @@ class _BrowserSession:
             "css": By.CSS_SELECTOR, "xpath": By.XPATH,
             "id": By.ID, "name": By.NAME, "tag": By.TAG_NAME,
         }.get(by_str.lower(), By.CSS_SELECTOR)
+
+    def _save_screenshot(self, b64: str, label: str = "auto") -> str:
+        """Save a base64 screenshot to disk and update the live viewer."""
+        import base64, time
+        ts = int(time.time())
+        fname = f"screenshot_{label}_{ts}.png"
+        path = WORKSPACE_DIR / fname
+        path.write_bytes(base64.b64decode(b64))
+        # Update latest symlink / file for live viewer
+        latest = WORKSPACE_DIR / "latest_screenshot.png"
+        try:
+            if latest.is_symlink() or latest.exists():
+                latest.unlink()
+            latest.symlink_to(path.name)
+        except Exception:
+            pass
+        return fname
 
     def _dispatch(self, action: str, **kwargs) -> dict:
         from selenium.webdriver.support.ui import WebDriverWait
@@ -344,12 +446,16 @@ class _BrowserSession:
             fname = f"page_{ts}.html"
             path = WORKSPACE_DIR / fname
             path.write_text(src, encoding="utf-8")
+            b64 = d.get_screenshot_as_base64()
+            shot_file = self._save_screenshot(b64, "navigate")
             return {
                 "title": d.title,
                 "url": d.current_url,
                 "source_file": fname,
                 "bytes": len(src),
-                "preview": src[:1000],
+                "screenshot_base64": b64,
+                "screenshot_file": shot_file,
+                "simplified_dom": self._strip_dom(src),
             }
 
         elif action == "source":
@@ -396,17 +502,44 @@ class _BrowserSession:
             el = d.find_element(self._by(kwargs.get("by", "css")), kwargs["selector"])
             el.click()
             time.sleep(1.5)   # let JS/redirect settle
-            return {"url": d.current_url, "title": d.title}
+            b64 = d.get_screenshot_as_base64()
+            shot_file = self._save_screenshot(b64, "click")
+            return {
+                "url": d.current_url,
+                "title": d.title,
+                "screenshot_base64": b64,
+                "screenshot_file": shot_file,
+                "simplified_dom": self._strip_dom(d.page_source),
+            }
 
         elif action == "submit":
             el = d.find_element(self._by(kwargs.get("by", "css")), kwargs["selector"])
             el.submit()
             time.sleep(2)
-            return {"url": d.current_url, "title": d.title}
+            b64 = d.get_screenshot_as_base64()
+            shot_file = self._save_screenshot(b64, "submit")
+            return {
+                "url": d.current_url,
+                "title": d.title,
+                "screenshot_base64": b64,
+                "screenshot_file": shot_file,
+                "simplified_dom": self._strip_dom(d.page_source),
+            }
 
         elif action == "execute_js":
             result = d.execute_script(kwargs["script"])
-            return {"result": str(result)[:500]}
+            result_str = str(result)
+            if len(result_str) > 3000:
+                # Save full result to file, return truncated preview
+                fname = f"js_result_{ts}.txt"
+                path = WORKSPACE_DIR / fname
+                path.write_text(result_str, encoding="utf-8")
+                return {
+                    "result": result_str[:2000] + "...(truncated)",
+                    "full_result_file": fname,
+                    "total_length": len(result_str),
+                }
+            return {"result": result_str}
 
         elif action == "cookies":
             cookies = d.get_cookies()
@@ -416,10 +549,18 @@ class _BrowserSession:
             return {"cookies": cookies[:10], "file": fname, "total_count": len(cookies)}
 
         elif action == "screenshot":
-            fname = kwargs.get("filename", "screenshot.png")
-            path = WORKSPACE_DIR / fname
-            d.save_screenshot(str(path))
-            return {"saved": str(path)}
+            b64 = d.get_screenshot_as_base64()
+            label = kwargs.get("filename", f"screenshot_{ts}.png").replace(".png", "")
+            shot_file = self._save_screenshot(b64, label)
+            dom = self._strip_dom(d.page_source)
+            return {
+                "saved": str(WORKSPACE_DIR / shot_file),
+                "screenshot_base64": b64,
+                "screenshot_file": shot_file,
+                "url": d.current_url,
+                "title": d.title,
+                "simplified_dom": dom,
+            }
 
         elif action == "wait":
             secs = float(kwargs.get("seconds", 2))
@@ -465,7 +606,7 @@ _browser = _BrowserSession()
 
 
 def browser_action(action: str, **kwargs) -> dict:
-    """Drive a persistent headless Firefox browser."""
+    """Drive a persistent headless Chromium browser with vision support."""
     return _browser.action(action, **kwargs)
 
 
@@ -939,25 +1080,25 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "browser_action",
             "description": (
-                "Control a persistent headless Firefox browser (Selenium). "
+                "Control a persistent headless Chromium browser (Selenium) with VISION support. "
                 "Use this for JavaScript-heavy sites, SPA login forms, React/Angular/Vue apps, "
                 "or any page where the HTML is rendered by JS and not visible in raw HTTP responses. "
+                "VISION: navigate/click/submit/screenshot actions return a screenshot image that "
+                "you can SEE — use this to understand page layout, find buttons, and reason about "
+                "what to click next. Combined with simplified_dom for precise selectors. "
                 "The browser keeps state (cookies, session, current page) between calls — "
                 "navigate once, then fill/click without re-navigating. "
-                "IMPORTANT: All page sources, elements, and cookies are saved to workspace files "
-                "(page_<timestamp>.html, elements_<hash>.json, cookies_<timestamp>.json). "
-                "Use read_file() to access full data when needed. "
                 "Actions: "
-                "navigate(url) — go to URL, wait for JS, saves page to file, returns title+preview; "
-                "source() — save current page to file, returns preview; "
-                "find_elements(selector, by) — find elements, saves to file (by: css/xpath/id/name); "
+                "navigate(url) — go to URL, returns screenshot + simplified DOM; "
+                "source() — save current page HTML to file, returns preview; "
+                "find_elements(selector, by) — find elements (by: css/xpath/id/name); "
                 "fill(selector, value, by) — type into an input field; "
-                "click(selector, by) — click button/link, waits for navigation; "
-                "submit(selector, by) — submit a form; "
+                "click(selector, by) — click button/link, returns screenshot + DOM; "
+                "submit(selector, by) — submit a form, returns screenshot + DOM; "
                 "wait_for(selector, by, timeout) — wait until element appears; "
                 "execute_js(script) — run JavaScript, returns result; "
-                "cookies() — save all cookies to file, returns preview; "
-                "screenshot(filename) — save PNG to workspace; "
+                "cookies() — get all cookies; "
+                "screenshot(filename) — take screenshot, returns image; "
                 "wait(seconds) — pause; "
                 "close() — quit browser."
             ),
