@@ -40,12 +40,13 @@ The agent operates through a persistent Python REPL — writing and executing co
 | | Capability | Details |
 |---|---|---|
 | 🤖 | **Autonomous Agent** | AI writes & executes attack code in a persistent REPL — no manual scripting needed |
+| 👁️ | **Browser Vision** | Headless Chromium with screenshot analysis — the AI *sees* pages, confirms findings visually, and handles JS-heavy apps |
 | 🔍 | **OSINT Recon** | Subdomain enumeration (crt.sh), DNS, WHOIS, Wayback Machine, DuckDuckGo dorking |
 | 🌐 | **Full Web Testing** | SQLi, XSS, CSRF, IDOR, SSRF, CRLF, command injection, deserialization, and more |
 | 🔐 | **2FA / Cookie Auth** | Paste a session cookie for targets with complex authentication |
 | 🧅 | **Tor Routing** | Route all agent traffic through Tor with one flag |
 | 📊 | **Professional Reports** | Markdown reports with CVSS v3.1 scores, reproducible curl PoCs, and remediation |
-| ✅ | **Zero False Positives** | Strict confirmation logic — every finding is verified, not just observed |
+| ✅ | **Zero False Positives** | Strict confirmation logic — every finding is screenshot-verified and confirmed, not just observed |
 | 🖥️ | **Rich TUI** | Color-coded terminal interface with real-time tool output and phase tracking |
 
 ### Privacy Notice
@@ -103,20 +104,21 @@ The setup script creates a virtual environment, installs all dependencies, and g
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Pull a model (cloud-proxied — recommended for best results)
-ollama pull glm-4.7:cloud
+# Pull the default model (vision + tools + thinking)
+ollama pull kimi-k2.5:cloud
 ```
 
 <details>
 <summary><b>Available Models</b></summary>
 
 **Cloud-proxied** (via Ollama infrastructure — data sent to provider):
-| Model | Notes |
-|-------|-------|
-| `glm-4.7:cloud` | Recommended — 198K context, coding-specialized, fast |
-| `kimi-k2:1t-cloud` | Strong reasoning, large context |
-| `deepseek-v3.1:671b-cloud` | High capability, slower |
-| `qwen3-coder-next:cloud` | Good coding performance |
+| Model | Vision | Notes |
+|-------|--------|-------|
+| `kimi-k2.5:cloud` | ✅ | **Default** — vision + tools + thinking, screenshot-verified findings |
+| `glm-4.7:cloud` | ❌ | 198K context, coding-specialized, fast (no vision) |
+| `kimi-k2:1t-cloud` | ❌ | Strong reasoning, large context |
+| `deepseek-v3.1:671b-cloud` | ❌ | High capability, slower |
+| `qwen3-coder-next:cloud` | ❌ | Good coding performance |
 
 **Local** (fully private — requires GPU with sufficient VRAM):
 | Model | VRAM | Notes |
@@ -126,6 +128,8 @@ ollama pull glm-4.7:cloud
 | `codellama:34b` | ~20GB | Meta's code model |
 
 > Cloud-proxied models (`:cloud` suffix) route prompts and target data through Ollama's cloud infrastructure to the model provider. For sensitive engagements, use a locally-running model.
+>
+> **Vision models** (like `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy single-page apps. Non-vision models still work but skip screenshot analysis.
 
 </details>
 
@@ -155,7 +159,7 @@ ollama pull glm-4.7:cloud
 ./run.sh -t https://target.com --tor
 
 # Specific model
-./run.sh -t https://target.com -m kimi-k2:1t-cloud
+./run.sh -t https://target.com -m glm-4.7:cloud
 ```
 
 ### Console Commands

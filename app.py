@@ -17,10 +17,11 @@ from ui.console import PentestConsole
 
 # Models known to support tool calling well with Ollama
 PREFERRED_MODELS = [
+    "kimi-k2.5",
+    "kimi-k2",
     "glm-4.7",
     "glm-5",
     "glm-4",
-    "kimi-k2",
     "deepseek",
     "qwen",
     "mistral",
@@ -237,7 +238,7 @@ class App:
                 self.ui.print_system("  set SCOPE    target.com,api.target.com")
                 self.ui.print_system("  set MODE     webapp | osint | full")
                 self.ui.print_system("  set TOR      on | off  (route HTTP through Tor localhost:9050)")
-                self.ui.print_system("  set MODEL    glm-4.7:cloud")
+                self.ui.print_system("  set MODEL    kimi-k2.5:cloud")
                 self.ui.print_system("  run          — start the pentest")
 
             elif cmd == "model" and len(parts) >= 2:

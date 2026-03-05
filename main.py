@@ -5,7 +5,7 @@ AI Pentest Console — Entry Point
 Usage:
   python main.py
   python main.py --target http://example.com
-  python main.py --model kimi-k2:1t-cloud
+  python main.py --model kimi-k2.5:cloud
   python main.py --target http://example.com --model deepseek-v3.1:671b-cloud
 """
 
@@ -31,7 +31,7 @@ Examples:
   python main.py -t https://target.com -u admin -p secret123
   python main.py -t target.com --mode osint
   python main.py -t https://target.com --mode full -s target.com,api.target.com
-  python main.py -m glm-4.7:cloud -t https://target.com
+  python main.py -m kimi-k2.5:cloud -t https://target.com
         """,
     )
     parser.add_argument(
@@ -42,7 +42,7 @@ Examples:
     parser.add_argument(
         "--model", "-m",
         metavar="MODEL",
-        help="Ollama model (e.g. glm-4.7:cloud, kimi-k2:1t-cloud)",
+        help="Ollama model (e.g. kimi-k2.5:cloud, glm-4.7:cloud)",
     )
     parser.add_argument(
         "--username", "-u",
