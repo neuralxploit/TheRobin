@@ -3244,7 +3244,20 @@ BEFORE WRITING THE REPORT — FALSE POSITIVE CHECKLIST:
   ✗ DO NOT include "default credentials found" unless you actually logged in successfully
     and saw an authenticated page (not just a 200 on the login page)
   ✗ DO NOT include missing headers as HIGH — use exact severities from Phase 2
+  ✗ DO NOT include "session fixation" unless you PROVED session ID stays the same
+    (print BOTH real pre-login and post-login values — not placeholder ABC123)
+  ✗ DO NOT include "PUT method enabled" unless PUT actually DID something
+    (200 with an error/default page = PUT not processed = NOT a finding)
+  ✗ DO NOT include "CSRF token not HttpOnly" — CSRF tokens MUST be readable by JS
+    to work with AJAX/XHR. This is BY DESIGN. Only report if combined with confirmed XSS.
+  ✗ DO NOT include "TLS cert expiring" as MEDIUM if > 30 days. [INFO] at most.
+  ✗ DO NOT include "endpoint exposed" unless it returns REAL data, not a 404/error page
+    (screenshot-verify with browser_action BEFORE including)
+  ✗ DO NOT include "REST API endpoints found in JS" as a finding — this is NORMAL.
+    Only report if the API endpoints are actually accessible without authentication.
   ✓ DO include every confirmed vuln with actual evidence from the server response
+  ✓ DO show the actual Python test script you ran + the actual output
+  ✓ DO reference the screenshot file that proves it
 
 COMPLETENESS CHECK — before writing report, verify you tested ALL of these:
   □ Every form for XSS (reflected AND stored — check the display page after submitting)
@@ -3282,34 +3295,43 @@ FINDING TEMPLATE — use this EXACTLY for every finding:
 | **Payload**   | exact input used (or "N/A" for config issues) |
 | **CVSS v3.1** | score/10 — vector string |
 
-**Evidence (actual server response — MANDATORY, never write vague descriptions):**
-```
-HTTP/1.1 200 OK
-[paste the EXACT response lines — status code, key headers, body snippet]
-[this MUST be real output from your test, NOT a description like "contains sensitive data"]
-[if you cannot show real evidence, the finding is NOT confirmed — do NOT include it]
+**Test Script (what you ran):**
+```python
+# Paste the EXACT Python code from your run_python call that found this vulnerability
+# This shows the reviewer HOW you tested, not just the result
+r = session.get('https://exact.url/path', params={'q': '<script>alert(1)</script>'}, verify=False)
+print(f"Status: {r.status_code}")
+print(f"Body: {r.text[:300]}")
 ```
 
-**Screenshot Proof:** `screenshot_filename.png` — visual browser screenshot confirming the finding.
-Every [HIGH] and [CRITICAL] MUST have a screenshot. If the screenshot shows a 404/error/WAF page
-instead of the expected vulnerability, the finding is a FALSE POSITIVE — remove it from the report.
+**Server Response (actual output — copy-paste from test output):**
+```
+Status: 200
+Content-Type: text/html; charset=utf-8
+Body: <div class="results">Results for: <script>alert(1)</script></div>
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        payload reflected UNESCAPED
+```
+(Paste REAL output. NEVER write vague descriptions like "contains sensitive data".
+ If you cannot paste real output, the finding is NOT confirmed — do NOT include it.)
 
-**Proof of Concept** (copy-paste to reproduce — complete attack chain):
+**Screenshot Proof:** `xss_proof_search_q.png`
+(Browser screenshot showing the vulnerability visually confirmed.
+ MANDATORY for [HIGH] and [CRITICAL]. If screenshot shows 404/error → FALSE POSITIVE, remove finding.)
+
+**Proof of Concept** (copy-paste curl command to reproduce):
 ```bash
-# MANDATORY RULES:
-# (1) Use REAL values — NEVER use <VALID_TOKEN>, <TARGET>, <COOKIE> placeholders
-# (2) Always include -A with browser UA
-# (3) Always include Content-Type for POST
-# (4) Always add # Expected: comment with actual expected output
-# (5) If authenticated: include -H "Authorization: Bearer eyJ0eX..." with REAL token
-#     or -b "real_cookie_name=real_cookie_value" with REAL cookies
-# A PoC with placeholders like <VALID_TOKEN> is USELESS — paste the real token!
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-[PASTE WORKING COMMANDS HERE — see formats below]
+# Use REAL URLs, REAL cookies, REAL tokens — NEVER use <PLACEHOLDER> values
+# Get real cookies: '; '.join(f'{c.name}={c.value}' for c in _G['session'].cookies)
+curl -sk -A "$UA" -b "Navajo=real_value; WWW-UAT-Session=real_value" \
+  'https://exact.url/path?q=%3Cscript%3Ealert(1)%3C/script%3E'
+# Expected: body contains <script>alert(1)</script> unescaped
 ```
 
-**Impact:** Specific damage: what data is exposed, what actions an attacker can take.
-**Remediation:** Specific code/config fix with example.
+**Impact:** What specific damage can an attacker do? (e.g. "steal session cookies via XSS",
+  "access other users' invoices", "bypass authentication"). Be concrete, not generic.
+**Remediation:** Specific code/config fix. Show example code for the framework used.
 
 ---
 
@@ -4252,17 +4274,97 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
 
 *** REPORT QUALITY GATE — READ BEFORE WRITING THE REPORT ***
 
-Before including ANY finding in the report, verify:
-  1. You have ACTUAL server response evidence (not "the file is accessible" — show the content)
-  2. Sensitive file findings: did you verify Content-Type is NOT text/html? Did multiple
-     files return the same byte count (= SPA catch-all = FALSE POSITIVE)?
-  3. Curl PoCs use REAL tokens/cookies — search for "<" in your PoC. If you find
-     <VALID_TOKEN>, <TARGET>, <COOKIE> → replace with real values or REMOVE the finding.
-  4. Each finding was CONFIRMED by the test code (not just observed).
-     "Status 200" alone is NEVER confirmation. What was IN the response?
+THIS IS THE MOST IMPORTANT SECTION. A bad report destroys credibility. Follow EVERY rule.
+
+QUALITY RULE 1 — REAL EVIDENCE ONLY (NO VAGUE DESCRIPTIONS):
+  Every finding MUST include the ACTUAL server response — copy-paste from your test output.
+  NEVER write descriptions of what "should" happen. Show what DID happen.
+
+  ✗ BAD (vague description — NEVER do this):
+    ```
+    Pre-login:  JSESSIONID=ABC123
+    Post-login: JSESSIONID=ABC123 (same value)
+    ```
+
+  ✓ GOOD (actual server response from your test):
+    ```
+    $ Pre-login cookies:
+    Set-Cookie: Navajo=253abd0a6f9aPAycSIZNd5E1rDOi4uDjnPf3DkIQXHlkkNaCaZ6X04ABy0; Secure; HttpOnly; SameSite=Lax
+    Set-Cookie: WWW-UAT-Session=!U8E1+26EKQ6kEkdAEjmrDffKNjmgrdOsaI; Secure; HttpOnly; SameSite=Lax
+
+    $ Post-login cookies (after authentication):
+    Set-Cookie: Navajo=253abd0a6f9aPAycSIZNd5E1rDOi4uDjnPf3DkIQXHlkkNaCaZ6X04ABy0; Secure; HttpOnly; SameSite=Lax
+    (Navajo cookie value unchanged — session NOT regenerated after login)
+    ```
+
+  ✗ BAD: "Content-Length differs from GET response"
+  ✓ GOOD: "PUT /path → 200, body: '<html><title>Error</title>...' (same error page as GET, PUT not actually processed)"
+
+  ✗ BAD: "The health endpoint exposes application health status"
+  ✓ GOOD: "GET /actuator/health → 404, body: '<html>Page Not Found</html>' — endpoint does NOT exist, FALSE POSITIVE"
+  OR: "GET /actuator/health → 200, body: '{"status":"UP","components":{"db":{"status":"UP"}}}' — CONFIRMED"
+
+QUALITY RULE 2 — SCREENSHOT-VERIFIED (NO UNVERIFIED FINDINGS):
+  Before adding ANY finding to the report, you MUST have opened the vulnerable URL
+  in the browser via browser_action and taken a screenshot. If you didn't screenshot it,
+  GO BACK AND DO IT NOW before writing the report.
+
+  Every [HIGH] and [CRITICAL] finding MUST reference a screenshot file:
+    **Screenshot:** `session_fixation_proof.png` — shows dashboard accessible with pre-auth session
+
+  If the screenshot shows a 404, error page, or WAF block → the finding is FALSE POSITIVE.
+  REMOVE IT from the report. Do NOT include it even as [INFO].
+
+QUALITY RULE 3 — WORKING CURL POC WITH REAL VALUES:
+  Every PoC MUST be a working command someone can copy-paste and reproduce.
+  Search your PoC for these strings. If ANY appear → the PoC is BROKEN, fix it:
+    <TARGET>, <COOKIE>, <TOKEN>, <VALID_TOKEN>, <SESSION>, ABC123, xyz789,
+    example.com, placeholder, [INSERT], [PASTE]
+
+  MANDATORY: Get real cookie values from your test session:
+    cookie_str = '; '.join(f'{c.name}={c.value}' for c in _G['session'].cookies)
+  Paste these REAL cookies into every curl -b flag.
+
+QUALITY RULE 4 — SHOW THE SCRIPT AND OUTPUT:
+  For every finding, the evidence section should show:
+  1. The EXACT Python code or curl command you ran
+  2. The EXACT output/response you got back
+  Not a summary. Not a description. The real thing.
+
+  ✓ GOOD evidence format:
+    ```
+    # Test script:
+    r = session.get('https://target.com/actuator/health', verify=False)
+    print(f"Status: {r.status_code}")
+    print(f"Headers: {dict(r.headers)}")
+    print(f"Body: {r.text[:500]}")
+
+    # Output:
+    Status: 200
+    Headers: {'Content-Type': 'application/json', ...}
+    Body: {"status":"UP","components":{"db":{"status":"UP","details":{"database":"PostgreSQL"}}}}
+    ```
+
+QUALITY RULE 5 — ELIMINATE FALSE POSITIVES RUTHLESSLY:
+  Common false positives to catch BEFORE including in the report:
+    ✗ "Session fixation" → Did you ACTUALLY compare pre-login and post-login session IDs?
+      Show BOTH real values. If you can't prove they're the same → NOT a finding.
+    ✗ "PUT method enabled" → Did the PUT actually DO something? A 200 response with an error
+      page is NOT "PUT enabled". A 405 Method Not Allowed is correct behavior, not a finding.
+    ✗ "Actuator endpoint exposed" → Did it return ACTUAL data or a 404/error page?
+    ✗ "CSRF token not HttpOnly" → CSRF tokens are DESIGNED to be readable by JS.
+      This is BY DESIGN for frameworks that send CSRF via XHR headers. NOT a finding unless
+      combined with a confirmed XSS vulnerability.
+    ✗ "TLS cert expiring" → Is it actually expiring within 30 days? 83 days is not urgent.
+      Only report as [INFO] if > 30 days remaining. Only [MEDIUM] if < 30 days.
+    ✗ "Server version disclosure" → Only [LOW] if the version has known CVEs. Otherwise [INFO].
+
+  ASK YOURSELF: "If I were a senior security reviewer reading this report, would I approve
+  this finding? Or would I flag it as a false positive and question the tester's credibility?"
 
 If you cannot provide real evidence for a finding → downgrade to [INFO] or remove it entirely.
-A report with 5 confirmed findings is worth MORE than a report with 15 unverified ones.
+A report with 3 confirmed findings is worth MORE than a report with 15 unverified ones.
+An empty report that says "no vulnerabilities found" is BETTER than a report full of false positives.
 
 All automated testing phases are now complete. Do the following immediately — do NOT wait for user input:
 
