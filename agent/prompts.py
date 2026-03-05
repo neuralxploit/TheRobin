@@ -141,8 +141,13 @@ _r = _s.get(_G['BASE'], timeout=8)
 print(f'  GET {_G["BASE"]} → {_r.status_code}  (check for login redirect)')
 ```
 
-Then SKIP Phase 3 (authentication testing) entirely — there are no credentials to
-brute-force and login bypass does not apply. Continue from Phase 4 onwards.
+Then SKIP Phase 3 authentication TESTING (brute-force, login bypass) — but you MUST
+still run the AUTHENTICATED CRAWL from Phase 3. The crawl uses _G['session'] which
+you just loaded with cookies. Without the auth crawl, you have no AUTH_FORMS/AUTH_PAGES
+and all testing phases will miss authenticated endpoints.
+
+After loading cookies: run Phase 1 (recon + unauth crawl) → Phase 2 (headers) →
+skip Phase 3 login testing → run Phase 3 AUTHENTICATED CRAWL block → Phase 4+.
 Note in the report: "Authentication: Pre-authenticated session cookie provided (2FA app)."
 
 ═══════════════════════════════════════════════════════
@@ -723,39 +728,77 @@ After compaction, read plan.md to see exactly where you left off.
     session_a.verify = False
     session_a.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'
 
-    # Find login URL from ALL_FORMS or default to /login
-    login_forms = [f for f in _G.get('ALL_FORMS', []) if 'login' in f['action'].lower() or 'login' in f['page'].lower()]
-    login_url = login_forms[0]['action'] if login_forms else BASE + '/login'
-    login_fields = login_forms[0]['fields'] if login_forms else []
+    # Find login form — look for forms with password fields (universal, not just "login" in URL)
+    all_forms = _G.get('ALL_FORMS', [])
+    login_forms = []
+    for f in all_forms:
+        has_pass = any('pass' in fld['name'].lower() or fld.get('type') == 'password' for fld in f['fields'])
+        if has_pass:
+            login_forms.append(f)
+    # Prefer forms with "login/signin/auth" in URL, but accept any form with a password field
+    preferred = [f for f in login_forms if any(kw in f['action'].lower() + f['page'].lower()
+                 for kw in ['login', 'signin', 'sign-in', 'auth', 'session'])]
+    login_form = (preferred or login_forms or [None])[0]
+
+    if login_form:
+        login_url    = login_form['action']
+        login_fields = login_form['fields']
+        print(f"[LOGIN] Found form: {login_url}  fields={[f['name'] for f in login_fields]}")
+    else:
+        # Fallback: try common login paths
+        login_url    = BASE + '/login'
+        login_fields = []
+        for path in ['/login', '/signin', '/auth/login', '/user/login', '/account/login', '/api/login', '/session']:
+            try:
+                _r = session_a.get(BASE + path, timeout=8, allow_redirects=True)
+                if _r.status_code == 200 and 'password' in _r.text.lower():
+                    login_url = BASE + path
+                    print(f"[LOGIN] Found login page at {login_url}")
+                    break
+            except Exception:
+                continue
+        print(f"[LOGIN] No form with password field found in crawl — trying {login_url}")
 
     # Build field names from form (fallback to common names)
-    user_field = next((f['name'] for f in login_fields if 'user' in f['name'].lower() or 'email' in f['name'].lower()), 'username')
-    pass_field = next((f['name'] for f in login_fields if 'pass' in f['name'].lower()), 'password')
+    user_field = next((f['name'] for f in login_fields if any(kw in f['name'].lower() for kw in ['user', 'email', 'login', 'name', 'account', 'id'])), 'username')
+    pass_field = next((f['name'] for f in login_fields if 'pass' in f['name'].lower() or f.get('type') == 'password'), 'password')
 
     r_a = session_a.post(login_url, data={
         user_field: creds_a.get('username',''),
         pass_field: creds_a.get('password',''),
     }, allow_redirects=True)
 
-    # Success check: URL changed away from login, OR body contains logged-in indicators.
-    # Some apps return the home page directly from /login without redirecting (URL stays /login).
+    # Success check — universal indicators for ANY web app:
+    # 1. URL changed away from login page
+    # 2. Got new session cookies
+    # 3. Body contains logged-in indicators (logout link, username, welcome, etc.)
+    # 4. Got a redirect chain (login → home/dashboard/whatever)
     _body_a = r_a.text.lower()
+    _uname_lower = creds_a.get('username','').lower()
+    _login_indicators = ['logout', 'log out', 'sign out', 'signout', 'log-out',
+                         'dashboard', 'welcome', 'my account', 'profile', 'settings',
+                         'hello', 'hi ', f'logged in', _uname_lower]
+    _login_page_kws = ['login', 'signin', 'sign-in', 'auth/login']
+    _on_login_page = any(kw in r_a.url.lower() for kw in _login_page_kws)
+    _has_indicators = any(ind in _body_a for ind in _login_indicators if ind)
+    _got_cookies = bool(session_a.cookies)
+    _was_redirected = bool(r_a.history)
+
     _login_success = (
-        'login' not in r_a.url
-        or 'logout' in _body_a
-        or 'dashboard' in _body_a
-        or 'welcome' in _body_a
-        or f"logged in as {creds_a.get('username','').lower()}" in _body_a
-        or (r_a.cookies and any('session' in c.lower() for c in r_a.cookies.keys()))
+        (not _on_login_page)                       # redirected away from login
+        or _has_indicators                          # body shows logged-in content
+        or (_got_cookies and _was_redirected)       # got session + redirect
+        or (_got_cookies and _has_indicators)       # got session + logged-in body
     )
 
     if _login_success:
         print(f"[OK] Session A logged in as {creds_a.get('username')}  (URL: {r_a.url})")
         _G['session']   = session_a
         _G['session_a'] = session_a
-        # Try to extract user_id from page content (profile link, etc.)
+        _G['post_login_url'] = r_a.url   # store where login redirected — seed for auth crawl
+        # Try to extract user_id from page content (profile link, ID in URL, etc.)
         import re
-        uid_match = re.search(r'/profile/(\\d+)', r_a.text)
+        uid_match = re.search(r'/(?:profile|user|account|member)[/=](\d+)', r_a.text)
         if uid_match:
             _G['uid_a'] = int(uid_match.group(1))
             print(f"[OK] Session A user_id = {_G['uid_a']}")
@@ -773,17 +816,18 @@ After compaction, read plan.md to see exactly where you left off.
             pass_field: creds_b.get('password',''),
         }, allow_redirects=True)
         _body_b = r_b.text.lower()
+        _on_login_b = any(kw in r_b.url.lower() for kw in _login_page_kws)
+        _has_ind_b = any(ind in _body_b for ind in _login_indicators if ind)
         _login_success_b = (
-            'login' not in r_b.url
-            or 'logout' in _body_b
-            or 'dashboard' in _body_b
-            or 'welcome' in _body_b
-            or (r_b.cookies and any('session' in c.lower() for c in r_b.cookies.keys()))
+            (not _on_login_b)
+            or _has_ind_b
+            or (bool(session_b.cookies) and bool(r_b.history))
+            or (bool(session_b.cookies) and _has_ind_b)
         )
         if _login_success_b:
             print(f"[OK] Session B logged in as {creds_b.get('username')}  (URL: {r_b.url})")
             _G['session_b'] = session_b
-            uid_match = re.search(r'/profile/(\\d+)', r_b.text)
+            uid_match = re.search(r'/(?:profile|user|account|member)[/=](\d+)', r_b.text)
             if uid_match:
                 _G['uid_b'] = int(uid_match.group(1))
                 print(f"[OK] Session B user_id = {_G['uid_b']}")
@@ -824,7 +868,13 @@ After compaction, read plan.md to see exactly where you left off.
     AUTH_PARAMS = []   # URL parameters found in links (for SQLi/XSS testing)
 
     auth_visited = set()
-    auth_queue   = [BASE + '/dashboard', BASE + '/']
+    # Seed from: 1) post-login redirect URL, 2) root, 3) ALL unauth-discovered pages/links
+    _post_login = _G.get('post_login_url', BASE + '/')
+    auth_queue   = [_post_login, BASE + '/']
+    # Add all pages and links from the unauthenticated crawl — re-crawl them WITH auth
+    for _u in list(_G.get('ALL_PAGES', {}).keys()) + list(_G.get('ALL_LINKS', set())):
+        if _u.startswith(BASE) and _u not in auth_queue:
+            auth_queue.append(_u)
 
     # ── CRITICAL: URLs to NEVER visit (would destroy the session or cause damage) ──
     SKIP_PATTERNS = [
@@ -933,8 +983,12 @@ After compaction, read plan.md to see exactly where you left off.
         except Exception as e:
             print(f"  [ERR] {url} — {e}")
             continue
-        if 'login' in r.url and 'login' not in url:
-            print(f"  [REDIRECT→LOGIN] {url}")
+        # Detect redirect to login/auth pages (session lost or access denied)
+        _rurl = r.url.lower()
+        _uurl = url.lower()
+        _auth_kws = ['login', 'signin', 'sign-in', 'auth', 'sso', 'cas/login', 'oauth']
+        if any(kw in _rurl for kw in _auth_kws) and not any(kw in _uurl for kw in _auth_kws):
+            print(f"  [REDIRECT→LOGIN] {url} → {r.url}")
             continue
         AUTH_PAGES[url] = r.text
         print(f"  [CRAWL] {url}  ({r.status_code}  {len(r.text)} bytes)")
@@ -990,8 +1044,9 @@ After compaction, read plan.md to see exactly where you left off.
             continue
         if r.status_code == 404:
             continue
-        if 'login' in r.url and 'login' not in url:
-            print(f"  [AUTH REQUIRED] {path}  ({r.status_code})")
+        _prurl = r.url.lower()
+        if any(kw in _prurl for kw in _auth_kws) and not any(kw in path.lower() for kw in _auth_kws):
+            print(f"  [AUTH REQUIRED] {path} → {r.url}")
             continue
         AUTH_PAGES[url] = r.text
         auth_visited.add(url)
