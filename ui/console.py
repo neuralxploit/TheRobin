@@ -31,7 +31,7 @@ try:
     _HISTORY_FILE = Path.home() / ".pentest_console_history"
     try:
         _rl.read_history_file(str(_HISTORY_FILE))
-    except FileNotFoundError:
+    except (FileNotFoundError, OSError, PermissionError):
         pass
     _rl.set_history_length(500)
     _rl.parse_and_bind("set editing-mode emacs")   # arrow keys + Ctrl+A/E/K/U
@@ -39,7 +39,7 @@ try:
     import atexit
     atexit.register(_rl.write_history_file, str(_HISTORY_FILE))
     _READLINE_OK = True
-except ImportError:
+except (ImportError, OSError):
     _READLINE_OK = False
 
 # ─── Severity config ──────────────────────────────────────────────────────────
