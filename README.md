@@ -57,21 +57,27 @@ TheRobin works with both **local models** (data never leaves your machine) and *
 
 ## Testing Methodology
 
-TheRobin follows a structured 12-phase approach covering the OWASP Top 10 and beyond:
+TheRobin follows a structured 18-phase approach — each vulnerability type gets its own dedicated phase:
 
 ```
- Phase  1 │ Reconnaissance         → Headers, tech stack, directory bruteforce, sitemap
- Phase  2 │ Authentication         → Default credentials, brute-force, login bypass
- Phase  3 │ Authenticated Crawl    → Form discovery, parameter harvesting, ID collection
+ Phase  1 │ Recon & Crawl          → Unauthenticated spider, tech stack, directory bruteforce
+ Phase  2 │ Security Headers       → Missing headers, server disclosure
+ Phase  3 │ Authentication         → Default creds, brute-force, login bypass, authenticated crawl
  Phase  4 │ Session Management     → Cookie flags, session fixation, JWT analysis
- Phase  5 │ Cross-Site Scripting   → Reflected, stored, DOM-based XSS
- Phase  6 │ SQL Injection          → Error-based, blind boolean/time, auth bypass
- Phase  7 │ Access Control & CSRF  → Unauthenticated access, CSRF token verification
- Phase  8 │ Tech Fingerprinting    → Version detection, CVE lookup, JS static analysis
- Phase  9 │ Advanced Web Attacks   → CORS, open redirect, CRLF injection, SSL/TLS
- Phase 10 │ Protocol Attacks       → Host header injection, request smuggling, GraphQL
- Phase 11 │ IDOR                   → Cross-user access control testing (2-account)
- Phase 12 │ Reporting              → Aggregated findings, curl PoCs, CVSS, remediation
+ Phase  5 │ XSS                    → Reflected + stored — ALL forms, ALL params
+ Phase  6 │ SQL Injection          → Error/blind/auth bypass — ALL forms, ALL params
+ Phase  7 │ CSRF                   → ALL state-changing POST forms
+ Phase  8 │ Tech Fingerprinting    → Version detection, CVE lookup, JS analysis
+ Phase  9 │ CORS / Redirect / SSL  → CORS misconfig, open redirect, SSL/TLS, JWT
+ Phase 10 │ Command Injection      → ALL forms — shell injection in every text input
+ Phase 11 │ SSTI                   → Template injection — ALL text inputs
+ Phase 12 │ SSRF                   → ALL URL-accepting params — internal/metadata/file
+ Phase 13 │ Deserialization        → Pickle/YAML RCE on discovered endpoints
+ Phase 14 │ File Upload            → Webshell, extension bypass, SVG/HTML XSS
+ Phase 15 │ GraphQL                → Introspection, injection, auth bypass
+ Phase 16 │ Protocol Attacks       → Host header injection, request smuggling, CRLF
+ Phase 17 │ IDOR                   → Cross-user access control (2-account)
+ Phase 18 │ Reporting              → Aggregated findings, curl PoCs, CVSS, screenshots
 ```
 
 Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands.

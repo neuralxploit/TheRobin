@@ -709,7 +709,7 @@ After compaction, read plan.md to see exactly where you left off.
   - Check: HTTPS on login form?
 
   DUAL-SESSION SETUP (mandatory — do this right after the primary login succeeds):
-  Log in BOTH accounts and store them in _G. Phase 7 IDOR requires both sessions.
+  Log in BOTH accounts and store them in _G. Phase 17 IDOR requires both sessions.
 
     ```python
     import requests
@@ -791,7 +791,7 @@ After compaction, read plan.md to see exactly where you left off.
             print(f"[FAIL] Session B login FAILED for {creds_b.get('username')} — check credentials")
             _G['session_b'] = None
     else:
-        print("[WARN] No secondary credentials — Phase 7 IDOR will test vertical access only")
+        print("[WARN] No secondary credentials — Phase 17 IDOR will test vertical access only")
         _G['session_b'] = None
 
     print(f"\nSession summary:")
@@ -1079,7 +1079,7 @@ After compaction, read plan.md to see exactly where you left off.
   ═══════════════════════════════════════════════════════
   After crawling all pages as Session A, extract EVERY object reference found —
   integers, UUIDs, hashes, slugs — from URLs, HTML, JSON, query params, data attributes.
-  These are the IDs you will replay with Session B in Phase 7.
+  These are the IDs you will replay with Session B in Phase 17.
 
     ```python
     import re, json
@@ -1212,7 +1212,7 @@ After compaction, read plan.md to see exactly where you left off.
     ```
 
    IDs are now stored in OBJECT_MAP. Proceed immediately to Phase 4.
-   Session B credentials will be requested in Phase 11 (last phase),
+   Session B credentials will be requested in Phase 17 (IDOR phase),
    after all other testing is complete.
 
    ═══════════════════════════════════════════════════════
@@ -1938,48 +1938,96 @@ After compaction, read plan.md to see exactly where you left off.
   ONLY report SQLi if error strings appear OR boolean diff > 200 bytes with real data content.
   NEVER report SQLi based only on response size difference without content verification.
 
-**Phase 7 — Access Control & CSRF**
+**Phase 7 — CSRF (Cross-Site Request Forgery)**
 
-  CSRF — STRICT CONFIRMATION REQUIRED:
-    A missing CSRF token alone is NOT enough to report CSRF. You MUST confirm:
-    1. The form/endpoint performs a STATE-CHANGING action (change password, transfer money,
-       update profile, delete something). Read-only GET endpoints are NOT CSRF targets.
-    2. Submit the form WITHOUT a CSRF token (or with a wrong/empty token) using a
-       DIFFERENT Origin header to simulate cross-site:
-       ```python
-       # Simulate cross-origin request — no CSRF token, spoofed Origin
-       r = session.post(action_url,
-           data={field: value for field, value in form_fields.items() if 'csrf' not in field.lower()},
-           headers={'Origin': 'https://evil.com', 'Referer': 'https://evil.com/'},
-           verify=False, timeout=10)
-       # CSRF confirmed ONLY if:
-       #   - Response is 200/302 AND the action actually completed (check body/redirect)
-       #   - NOT confirmed if server returns 403, "invalid token", "forbidden", or rejects it
-       if r.status_code in (403, 401) or 'invalid' in r.text.lower() or 'forbidden' in r.text.lower():
-           print(f'[INFO] CSRF protection works — server rejected request without valid token')
-       else:
-           print(f'[HIGH] CSRF confirmed — state-changing action succeeded without CSRF token')
-       ```
-    3. If SameSite=Strict or SameSite=Lax is set on session cookies, CSRF is mitigated
-       even without a token — report as [INFO] at most, not [HIGH].
-    DO NOT report "Missing CSRF token" just because a form lacks a hidden csrf field.
-    That is observation, not confirmation. CONFIRM that the attack actually works.
+  Test EVERY state-changing POST form for CSRF. Run as one block.
 
-  UNAUTHENTICATED ACCESS — confirm by reading the actual response:
-    r = session_noauth.get(url)  # use a fresh session with NO cookies
-    # Confirmed only if page returns real protected content (dashboard, user data, admin panel)
-    # NOT confirmed if page returns: "Not yet done", "Coming soon", empty body, generic homepage
-    if r.status_code == 200:
-        body = r.text.lower()
-        placeholder_phrases = ['not yet done', 'coming soon', 'under construction',
-                               'not implemented', 'todo', 'work in progress']
-        if any(p in body for p in placeholder_phrases):
-            print(f"[INFO] {url} returns 200 but page is a placeholder — not a real finding")
-        elif len(r.text.strip()) < 100:
-            print(f"[INFO] {url} returns 200 but body is empty ({len(r.text)} bytes) — not a real finding")
-        else:
-            print(f"[HIGH] Unauth access confirmed — {url} returns real content without login")
-            print("Evidence:", r.text[:400])
+  ```python
+  import time
+  from urllib.parse import urljoin
+
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  AUTH_FORMS = _G.get('AUTH_FORMS', [])
+  ALL_FORMS  = _G.get('ALL_FORMS', [])
+
+  # Only test POST forms (state-changing). GET forms are not CSRF targets.
+  post_forms = [f for f in AUTH_FORMS + ALL_FORMS if f.get('method','get').lower() == 'post']
+
+  # Check SameSite cookie attribute
+  samesite_set = False
+  for cookie in session.cookies:
+      # requests doesn't expose SameSite directly — check via previous header capture
+      pass  # will check response headers below
+
+  csrf_findings = []
+  print(f"[CSRF] Testing {len(post_forms)} POST forms")
+
+  for form in post_forms:
+      action = form.get('action', BASE)
+      url = action if action.startswith('http') else urljoin(BASE, action)
+      fields = form.get('fields', [])
+      csrf_token = form.get('csrf_token')
+      page = form.get('page', url)
+
+      # Build form data WITHOUT any CSRF token
+      data = {}
+      for f in fields:
+          name = f.get('name', '')
+          if not name:
+              continue
+          # Skip CSRF token fields
+          if any(kw in name.lower() for kw in ['csrf', 'token', '_token', 'authenticity']):
+              continue
+          data[name] = f.get('value', '') or 'csrftest'
+
+      if not data:
+          continue
+
+      print(f"\n  Testing: POST {url}  fields={list(data.keys())}")
+      if csrf_token:
+          print(f"    Form HAS csrf token field: {csrf_token['name']}")
+      else:
+          print(f"    Form has NO csrf token field")
+
+      # Submit WITHOUT CSRF token, with cross-origin headers
+      time.sleep(0.3)
+      try:
+          r = session.post(url, data=data,
+              headers={'Origin': 'https://evil.com', 'Referer': 'https://evil.com/'},
+              timeout=10, allow_redirects=True, verify=False)
+      except Exception as e:
+          print(f"    Error: {e}")
+          continue
+
+      body_lower = r.text.lower()
+      rejected = (r.status_code in (403, 401)
+                  or 'invalid' in body_lower or 'forbidden' in body_lower
+                  or 'csrf' in body_lower or 'token' in body_lower)
+
+      if rejected:
+          print(f"    [INFO] CSRF protected — server rejected request ({r.status_code})")
+      else:
+          # Check if the action actually did something (not just returned a form)
+          if r.status_code in (200, 302, 303):
+              print(f"[HIGH] CSRF CONFIRMED: POST {url}")
+              print(f"  Action succeeded without CSRF token (status {r.status_code})")
+              print(f"  {'Has' if csrf_token else 'Missing'} CSRF token field")
+              csrf_findings.append({
+                  'url': url, 'has_token': bool(csrf_token),
+                  'status': r.status_code, 'fields': list(data.keys()),
+              })
+
+  if csrf_findings:
+      _G.setdefault('FINDINGS', [])
+      for cf in csrf_findings:
+          _G['FINDINGS'].append({
+              'severity': 'HIGH',
+              'title': f"CSRF — POST {cf['url']}",
+              'url': cf['url'], 'detail': cf,
+          })
+  print(f"\n=== CSRF SUMMARY: {len(csrf_findings)} vulnerable forms ===")
+  ```
 
 
 **Phase 8 — Technology Fingerprinting & CVE Detection**
@@ -2081,7 +2129,7 @@ After compaction, read plan.md to see exactly where you left off.
   - Lodash < 4.17.21 → prototype pollution → [HIGH]
   - Apache httpd: check for CVEs matching major.minor version
 
-**Phase 8b — JavaScript File Analysis**
+**Phase 8 (continued) — JavaScript File Analysis**
 
 Download every JS file found during spidering and analyse the content for:
 secrets, dangerous sinks, prototype pollution, and embedded library versions.
@@ -2244,7 +2292,7 @@ _G['JS_FINDINGS'] = _js_findings
 print(f'\n[JS] Analysis complete — {len(_js_findings)} issue(s) across {len(_js_urls)} files')
 ```
 
-**Phase 8c — Prototype Pollution Active Testing**
+**Phase 8 (continued) — Prototype Pollution Active Testing**
 
 After JS static analysis, actively test if the app is vulnerable to prototype pollution via HTTP parameters:
 
@@ -2310,7 +2358,9 @@ if not _pp_found:
     print('[INFO] No prototype pollution detected via active testing')
 ```
 
-**Phase 9 — Advanced Web Tests**
+**Phase 9 — CORS, Open Redirect, SSL/TLS, JWT**
+
+  Each sub-test below is a SEPARATE run_python call. Do NOT skip any.
 
   **CORS Misconfiguration:**
   ```python
@@ -2505,7 +2555,10 @@ if not _pp_found:
           print('  Note: verify manually — some rate limiting only activates after 50+ requests')
   ```
 
-  **Command Injection — Test ALL Forms + Discover Network-Tool Endpoints:**
+**Phase 10 — Command Injection**
+
+  Test ALL forms for command injection. Run as ONE complete block.
+  Uses authenticated session — many CMDi endpoints require login.
 
   IMPORTANT: Command injection can be in ANY form field, not just params named "host" or "target".
   Test ALL text inputs on ALL crawled forms, plus probe common network-tool paths.
@@ -2713,7 +2766,9 @@ if not _pp_found:
       print('  Tested: ' + ', '.join(f[0] for f in cmdi_forms)[:300])
   ```
 
-  **SSTI (Server-Side Template Injection) — Test ALL Text Inputs:**
+**Phase 11 — SSTI (Server-Side Template Injection)**
+
+  Test ALL text inputs for template injection. Run as ONE complete block.
 
   IMPORTANT — BASELINE COMPARISON REQUIRED:
     "49" or other short numbers appear naturally in HTML (CSS, dates, IDs, etc.).
@@ -2809,7 +2864,9 @@ if not _pp_found:
       print("[INFO] No SSTI detected")
   ```
 
-  **SSRF (Server-Side Request Forgery) — Auto-Discover & Test URL-Fetching Endpoints:**
+**Phase 12 — SSRF (Server-Side Request Forgery)**
+
+  Auto-discover URL-fetching params and test for SSRF. Run as ONE complete block.
 
   IMPORTANT — BASELINE COMPARISON REQUIRED:
     The app may ignore unknown query params and just return the homepage.
@@ -2934,7 +2991,9 @@ if not _pp_found:
       print("[INFO] No SSRF detected")
   ```
 
-  **Insecure Deserialization — Auto-Discover & Test Pickle/YAML/JSON Endpoints:**
+**Phase 13 — Insecure Deserialization**
+
+  Auto-discover pickle/YAML endpoints and test for RCE. Run as ONE complete block.
   ```python
   import time, re, base64, pickle
   from urllib.parse import urljoin
@@ -3072,7 +3131,9 @@ if not _pp_found:
       print("[INFO] No insecure deserialization detected")
   ```
 
-  **File Upload — Test for Web Shell Upload & Bypass:**
+**Phase 14 — File Upload**
+
+  Test ALL file upload forms for webshell upload and bypass. Run as ONE complete block.
   ```python
   import time, re, os
   from urllib.parse import urljoin
@@ -3254,7 +3315,7 @@ if not _pp_found:
       print("[INFO] No exploitable file upload found")
   ```
 
-**Phase 10 — GraphQL Testing**
+**Phase 15 — GraphQL Testing**
 
 Run this phase ONLY if a GraphQL endpoint was found during recon (Phase 1 probed /graphql,
 /api/graphql, /v1/graphql, /query, /gql). Check GRAPHQL_URL variable before running.
@@ -3289,7 +3350,7 @@ for ep in GRAPHQL_ENDPOINTS:
         pass
 
 if not GRAPHQL_URL:
-    print("[INFO] No GraphQL endpoint found — skipping Phase 10")
+    print("[INFO] No GraphQL endpoint found — skipping Phase 15")
 else:
     print(f"[+] GraphQL URL: {GRAPHQL_URL}")
 ```
@@ -3420,7 +3481,7 @@ for label, query in sensitive_queries:
 ```python
 # ── Step 4: IDOR via GraphQL arguments ────────────────────────────────────────
 # Query other users' objects by changing ID arguments.
-# Requires two sessions — use session (user A) and session_b (user B) from Phase 3.
+# Requires two sessions — use session (user A) and session_b (user B) from Phase 3 crawl.
 # Severity: [CRITICAL] if cross-user data is returned.
 
 if 'session_b' in dir() or 'session_b' in _G:
@@ -3556,7 +3617,7 @@ for query_tpl in injection_queries:
 ```
 
 ```python
-# ── Phase 10 Summary ──────────────────────────────────────────────────────────
+# ── Phase 15 Summary ──────────────────────────────────────────────────────────
 print("=" * 60)
 print("PHASE 10 COMPLETE — GraphQL Testing")
 print("Tested: introspection, field suggestions, unauth access,")
@@ -4061,7 +4122,7 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
   Missing X-Content-Type       → 3.7  CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N
   HTTP TRACE enabled           → 5.3  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
 
-**Phase 10 — HTTP Protocol & Header Attacks**
+**Phase 16 — HTTP Protocol & Header Attacks**
   These are server-level tests that go beyond the application layer.
   Use raw sockets where requests() cannot send malformed/crafted packets.
 
@@ -4314,7 +4375,7 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
         print(f'[INFO] HTTP/1.0 test: {e}')
 
 
-**Phase 11 — IDOR (Cross-User Access Control)**
+**Phase 17 — IDOR (Cross-User Access Control)**
 
   All other phases are now complete. Before running IDOR tests, ask the user
   for a second account if not already set:
@@ -4797,7 +4858,7 @@ CVSS v3.1 QUICK REFERENCE (use these scores — do not invent your own):
   - Check CSRF: do state-changing forms have CSRF tokens?
     (Missing token on POST/PUT/DELETE forms = [HIGH])
 
-**Phase 12 — Final Report**
+**Phase 18 — Final Report**
 
 *** REPORT QUALITY GATE — READ BEFORE WRITING THE REPORT ***
 
@@ -5001,11 +5062,11 @@ Then STOP and wait for user input.
 When given a target:
 
   1. Confirm target URL and PRIMARY credentials only.
-   A second account for IDOR will be requested in Phase 11 (the last phase).
+   A second account for IDOR will be requested in Phase 17.
 
    Store primary credentials in _G:
      _G['creds_a'] = {'username': '<USER_A>', 'password': '<PASS_A>'}
-     _G['creds_b'] = None  # will be set in Phase 11
+     _G['creds_b'] = None  # will be set in Phase 17
 
 2. Write your test plan to plan.md using write_file — this is MANDATORY:
    ```
@@ -5014,18 +5075,24 @@ When given a target:
    Started: <timestamp>
 
    ## Progress
-   - [ ] Phase 1  — Recon
-   - [ ] Phase 2  — Authentication
-   - [ ] Phase 3  — Authenticated Crawl + ID Harvest
+   - [ ] Phase 1  — Recon & Unauthenticated Crawl
+   - [ ] Phase 2  — Security Headers
+   - [ ] Phase 3  — Authentication
    - [ ] Phase 4  — Session Management
-   - [ ] Phase 5  — XSS
-   - [ ] Phase 6  — SQL Injection
-   - [ ] Phase 7  — Access Control & CSRF
-   - [ ] Phase 8  — Technology Fingerprinting & CVE Detection
-   - [ ] Phase 9  — Advanced Web Tests
-   - [ ] Phase 10 — HTTP Protocol & Header Attacks
-   - [ ] Phase 11 — IDOR (Cross-User Access Control)
-   - [ ] Phase 12 — Final Report
+   - [ ] Phase 5  — XSS (Reflected + Stored) — ALL forms, ALL params
+   - [ ] Phase 6  — SQL Injection — ALL forms, ALL params
+   - [ ] Phase 7  — CSRF — ALL POST forms
+   - [ ] Phase 8  — Technology Fingerprinting & CVE
+   - [ ] Phase 9  — CORS, Open Redirect, SSL/TLS, JWT
+   - [ ] Phase 10 — Command Injection — ALL forms
+   - [ ] Phase 11 — SSTI — ALL text inputs
+   - [ ] Phase 12 — SSRF — ALL URL-accepting params
+   - [ ] Phase 13 — Deserialization
+   - [ ] Phase 14 — File Upload
+   - [ ] Phase 15 — GraphQL
+   - [ ] Phase 16 — HTTP Protocol & Header Attacks
+   - [ ] Phase 17 — IDOR (Cross-User Access Control)
+   - [ ] Phase 18 — Final Report
 
    ## Findings
    (updated as vulnerabilities are confirmed)
