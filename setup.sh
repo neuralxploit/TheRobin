@@ -51,14 +51,22 @@ pip install -r requirements.txt --quiet
 echo "  [OK] Dependencies installed:"
 pip show rich requests beautifulsoup4 PySocks selenium 2>/dev/null | grep -E "^(Name|Version):" | paste - - | awk '{print "       " $0}'
 
-# Check for Chromium (needed for browser vision)
+# Check for Chromium/Chrome (needed for browser vision)
 echo ""
-if command -v chromium-browser &>/dev/null || command -v chromium &>/dev/null || [ -f /snap/chromium/current/usr/lib/chromium-browser/chrome ]; then
-    echo "  [OK] Chromium found (browser vision enabled)"
+if command -v chromium-browser &>/dev/null || command -v chromium &>/dev/null \
+   || [ -f /snap/chromium/current/usr/lib/chromium-browser/chrome ] \
+   || [ -f "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] \
+   || [ -f "/Applications/Chromium.app/Contents/MacOS/Chromium" ]; then
+    echo "  [OK] Chrome/Chromium found (browser vision enabled)"
 else
-    echo "  [WARN] Chromium not found — browser screenshot features will be disabled"
-    echo "         Install with: sudo snap install chromium"
-    echo "         Or: sudo apt install chromium-browser"
+    echo "  [WARN] Chrome/Chromium not found — browser screenshot features will be disabled"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        echo "         Install with: brew install --cask chromium"
+        echo "         Or just install Google Chrome — it works too"
+    else
+        echo "         Install with: sudo snap install chromium"
+        echo "         Or: sudo apt install chromium-browser"
+    fi
 fi
 
 # Create run script

@@ -279,8 +279,10 @@ class _BrowserSession:
         self._lock = threading.Lock()
 
     def _find_chromium(self) -> tuple:
-        """Locate Chromium binary and chromedriver (handles snap)."""
+        """Locate Chromium/Chrome binary and chromedriver (Linux + macOS)."""
+        import platform
         binary_candidates = [
+            # Linux
             "/snap/chromium/current/usr/lib/chromium-browser/chrome",
             "/usr/bin/chromium-browser",
             "/usr/bin/chromium",
@@ -292,6 +294,17 @@ class _BrowserSession:
             "/usr/bin/chromedriver",
             "/usr/local/bin/chromedriver",
         ]
+        if platform.system() == "Darwin":
+            binary_candidates = [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                "/opt/homebrew/bin/chromium",
+                "/usr/local/bin/chromium",
+            ] + binary_candidates
+            driver_candidates = [
+                "/opt/homebrew/bin/chromedriver",
+                "/usr/local/bin/chromedriver",
+            ] + driver_candidates
         binary = next(
             (c for c in binary_candidates if os.path.isfile(c) and os.access(c, os.X_OK)),
             None,
@@ -309,9 +322,12 @@ class _BrowserSession:
 
         binary, chromedriver = self._find_chromium()
         if not binary:
-            raise RuntimeError(
-                "Chromium not found. Install: sudo snap install chromium"
-            )
+            import platform
+            if platform.system() == "Darwin":
+                hint = "Install: brew install --cask chromium  (or use Google Chrome)"
+            else:
+                hint = "Install: sudo snap install chromium"
+            raise RuntimeError(f"Chromium/Chrome not found. {hint}")
 
         tmp_dir = tempfile.mkdtemp(prefix="sel_")
         opts = Options()
