@@ -148,7 +148,14 @@ Available phase files:
   phases/phase_15_graphql.md        — GraphQL testing (if endpoint found)
   phases/phase_16_http_attacks.md   — HTTP protocol & header attacks
   phases/phase_17_idor.md           — IDOR (cross-user access control)
+  phases/phase_05b_dom_xss.md       — DOM XSS, framework template injection, encoding bypass
+  phases/phase_06b_nosqli.md        — NoSQL injection (MongoDB operators, JS injection)
+  phases/phase_09b_jwt_deep.md      — Deep JWT (alg:none, weak secrets, algorithm confusion)
   phases/phase_18_report.md         — Final report generation
+  phases/phase_19_business_logic.md — Business logic flaws (price tampering, coupon abuse)
+  phases/phase_20_xxe_pathtraversal.md — XXE injection + path traversal / LFI
+  phases/phase_21_api_security.md   — API enumeration, Swagger, auth bypass, data exposure
+  phases/phase_22_race_conditions.md — Race conditions, double-spend, TOCTOU
   phases/reporting_rules.md         — Finding documentation, PoC format, CVSS scores
 
 ═══════════════════════════════════════════════════════
@@ -193,11 +200,13 @@ Phase 5 — XSS (Reflected + Stored)
   - Part A: reflected XSS on all forms (probe -> context detect -> payload)
   - Part B: reflected XSS on URL params (AUTH_PARAMS + ALL_LINKS)
   - Part C: stored XSS on ALL POST forms, check ALL display pages
+  - Phase 5b: DOM XSS, framework template injection, encoding bypass (load phase_05b_dom_xss.md)
 
 Phase 6 — SQL Injection
   - Test EVERY form field + EVERY URL parameter
   - Part A: error-based + auth bypass + boolean blind on all forms
   - Part B: URL parameters from spider + auth crawl
+  - Phase 6b: NoSQL injection for MongoDB/Node.js apps (load phase_06b_nosqli.md)
 
 Phase 7 — CSRF
   - Test EVERY state-changing POST form
@@ -217,6 +226,7 @@ Phase 9 — CORS, Open Redirect, SSL/TLS, JWT
   - SSL/TLS certificate check
   - JWT detection and algorithm analysis
   - Rate limiting test
+  - Phase 9b: Deep JWT testing if tokens found (load phase_09b_jwt_deep.md)
 
 Phase 10 — Command Injection
   - Test ALL forms (not just keyword-matching ones)
@@ -254,6 +264,30 @@ Phase 17 — IDOR (Cross-User Access Control)
   - ASK user for second account credentials
   - 5 types: horizontal, bidirectional, vertical, API (no auth), write IDOR
   - Replay all harvested OBJECT_MAP IDs with Session B
+
+Phase 19 — Business Logic Flaws
+  - Price/quantity manipulation, negative values, overflow
+  - Coupon/discount code reuse abuse
+  - Workflow/step bypass (direct checkout access)
+  - Mass assignment / parameter tampering
+
+Phase 20 — XXE & Path Traversal / LFI
+  - XML External Entity injection (file read, SSRF)
+  - SVG/XLSX XXE via file upload
+  - Path traversal with encoding bypasses
+  - Direct URL path traversal
+
+Phase 21 — API Security & Enumeration
+  - Swagger/OpenAPI/Actuator endpoint discovery
+  - REST API enumeration, excessive data exposure
+  - Broken function-level authorization
+  - HTTP method tampering, rate limiting
+
+Phase 22 — Race Conditions
+  - Coupon race (concurrent application)
+  - Double-spend (payment/transfer race)
+  - Registration race (duplicate accounts)
+  - API TOCTOU (time-of-check to time-of-use)
 
 Phase 18 — Final Report (Professional Template)
   - Load phases/phase_18_report.md for the FULL report template
@@ -321,6 +355,10 @@ When given a target:
    - [ ] Phase 15 — GraphQL
    - [ ] Phase 16 — HTTP Protocol & Header Attacks
    - [ ] Phase 17 — IDOR
+   - [ ] Phase 19 — Business Logic Flaws
+   - [ ] Phase 20 — XXE & Path Traversal
+   - [ ] Phase 21 — API Security
+   - [ ] Phase 22 — Race Conditions
    - [ ] Phase 18 — Final Report
 
    ## Findings
