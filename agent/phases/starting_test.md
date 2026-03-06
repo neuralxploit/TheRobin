@@ -20,21 +20,29 @@ When given a target:
    - [ ] Phase 1  — Recon & Unauthenticated Crawl
    - [ ] Phase 2  — Security Headers
    - [ ] Phase 3  — Authentication
-   - [ ] Phase 4  — Session Management
-   - [ ] Phase 5  — XSS (Reflected + Stored) — ALL forms, ALL params
-   - [ ] Phase 6  — SQL Injection — ALL forms, ALL params
-   - [ ] Phase 7  — CSRF — ALL POST forms
-   - [ ] Phase 8  — Technology Fingerprinting & CVE
-   - [ ] Phase 9  — CORS, Open Redirect, SSL/TLS, JWT
-   - [ ] Phase 10 — Command Injection — ALL forms
-   - [ ] Phase 11 — SSTI — ALL text inputs
-   - [ ] Phase 12 — SSRF — ALL URL-accepting params
-   - [ ] Phase 13 — Deserialization
-   - [ ] Phase 14 — File Upload
-   - [ ] Phase 15 — GraphQL
-   - [ ] Phase 16 — HTTP Protocol & Header Attacks
-   - [ ] Phase 17 — IDOR (Cross-User Access Control)
-   - [ ] Phase 18 — Final Report
+   - [ ] Phase 4  — JS Secret Scanning
+   - [ ] Phase 5  — Session Management
+   - [ ] Phase 6  — XSS: Reflected + Stored — ALL forms, ALL params
+   - [ ] Phase 7  — XSS: DOM-Based
+   - [ ] Phase 8  — SQL Injection — ALL forms, ALL params
+   - [ ] Phase 9  — NoSQL Injection
+   - [ ] Phase 10 — CSRF — ALL POST forms
+   - [ ] Phase 11 — Technology Fingerprinting & CVE
+   - [ ] Phase 12 — CORS, Open Redirect, SSL/TLS
+   - [ ] Phase 13 — Deep JWT Testing
+   - [ ] Phase 14 — Command Injection — ALL forms
+   - [ ] Phase 15 — SSTI — ALL text inputs
+   - [ ] Phase 16 — SSRF — ALL URL-accepting params
+   - [ ] Phase 17 — Deserialization
+   - [ ] Phase 18 — File Upload
+   - [ ] Phase 19 — GraphQL
+   - [ ] Phase 20 — HTTP Protocol & Header Attacks
+   - [ ] Phase 21 — IDOR / Access Control
+   - [ ] Phase 22 — Business Logic Flaws
+   - [ ] Phase 23 — XXE & Path Traversal
+   - [ ] Phase 24 — API Security
+   - [ ] Phase 25 — Race Conditions
+   - [ ] Phase 26 — Final Report
 
    ## Findings
    (updated as vulnerabilities are confirmed)
