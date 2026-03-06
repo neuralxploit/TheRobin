@@ -19,7 +19,7 @@
 
 **Autonomous AI-driven penetration testing framework powered by LLMs.**
 <br>
-TheRobin executes a full 12-phase web application security assessment autonomously —
+TheRobin executes a full 26-phase web application security assessment autonomously —
 <br>
 from reconnaissance to report generation — using an AI agent that writes, executes, and iterates on its own attack code.
 
@@ -33,7 +33,7 @@ from reconnaissance to report generation — using an AI agent that writes, exec
 
 TheRobin is an offensive security tool that uses Large Language Models via [Ollama](https://ollama.com) to conduct autonomous penetration tests against web applications. Unlike traditional scanners that rely on signature matching, TheRobin's AI agent **reasons about responses**, **adapts its attack strategy**, and **confirms vulnerabilities** before reporting them.
 
-The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 12-phase methodology but adapts dynamically based on what it discovers.
+The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 26-phase methodology but adapts dynamically based on what it discovers.
 
 ### Key Capabilities
 
@@ -57,27 +57,35 @@ TheRobin works with both **local models** (data never leaves your machine) and *
 
 ## Testing Methodology
 
-TheRobin follows a structured 18-phase approach — each vulnerability type gets its own dedicated phase:
+TheRobin follows a structured 26-phase approach — each vulnerability type gets its own dedicated phase:
 
 ```
  Phase  1 │ Recon & Crawl          → Unauthenticated spider, tech stack, directory bruteforce
  Phase  2 │ Security Headers       → Missing headers, server disclosure
  Phase  3 │ Authentication         → Default creds, brute-force, login bypass, authenticated crawl
- Phase  4 │ Session Management     → Cookie flags, session fixation, JWT analysis
- Phase  5 │ XSS                    → Reflected + stored — ALL forms, ALL params
- Phase  6 │ SQL Injection          → Error/blind/auth bypass — ALL forms, ALL params
- Phase  7 │ CSRF                   → ALL state-changing POST forms
- Phase  8 │ Tech Fingerprinting    → Version detection, CVE lookup, JS analysis
- Phase  9 │ CORS / Redirect / SSL  → CORS misconfig, open redirect, SSL/TLS, JWT
- Phase 10 │ Command Injection      → ALL forms — shell injection in every text input
- Phase 11 │ SSTI                   → Template injection — ALL text inputs
- Phase 12 │ SSRF                   → ALL URL-accepting params — internal/metadata/file
- Phase 13 │ Deserialization        → Pickle/YAML RCE on discovered endpoints
- Phase 14 │ File Upload            → Webshell, extension bypass, SVG/HTML XSS
- Phase 15 │ GraphQL                → Introspection, injection, auth bypass
- Phase 16 │ Protocol Attacks       → Host header injection, request smuggling, CRLF
- Phase 17 │ IDOR                   → Cross-user access control (2-account)
- Phase 18 │ Reporting              → Aggregated findings, curl PoCs, CVSS, screenshots
+ Phase  4 │ JS Secret Scanning     → API keys, tokens, hardcoded credentials in JavaScript
+ Phase  5 │ Session Management     → Cookie flags, session fixation, JWT analysis
+ Phase  6 │ XSS: Reflected+Stored  → ALL forms, ALL params — reflected + stored
+ Phase  7 │ XSS: DOM-Based         → DOM sinks/sources, template injection in client-side
+ Phase  8 │ SQL Injection          → Error/blind/auth bypass — ALL forms, ALL params
+ Phase  9 │ NoSQL Injection        → MongoDB/operator injection on all parameters
+ Phase 10 │ CSRF                   → ALL state-changing POST forms
+ Phase 11 │ Tech Fingerprinting    → Version detection, CVE lookup, JS analysis
+ Phase 12 │ CORS / Redirect / SSL  → CORS misconfig, open redirect, SSL/TLS
+ Phase 13 │ Deep JWT Testing       → Algorithm confusion, key brute-force, claim tampering
+ Phase 14 │ Command Injection      → ALL forms — shell injection in every text input
+ Phase 15 │ SSTI                   → Template injection — ALL text inputs
+ Phase 16 │ SSRF                   → ALL URL-accepting params — internal/metadata/file
+ Phase 17 │ Deserialization        → Pickle/YAML RCE on discovered endpoints
+ Phase 18 │ File Upload            → Webshell, extension bypass, SVG/HTML XSS
+ Phase 19 │ GraphQL                → Introspection, injection, auth bypass
+ Phase 20 │ Protocol Attacks       → Host header injection, request smuggling, CRLF
+ Phase 21 │ IDOR                   → Cross-user access control (2-account)
+ Phase 22 │ Business Logic         → Price tampering, workflow bypass, rate limiting
+ Phase 23 │ XXE & Path Traversal   → XML external entities, LFI/directory traversal
+ Phase 24 │ API Security           → Endpoint enumeration, auth bypass, mass assignment
+ Phase 25 │ Race Conditions        → TOCTOU, concurrent request exploitation
+ Phase 26 │ Reporting              → Aggregated findings, curl PoCs, CVSS, screenshots
 ```
 
 Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands.
