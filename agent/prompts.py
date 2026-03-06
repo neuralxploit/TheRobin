@@ -1727,11 +1727,21 @@ After compaction, read plan.md to see exactly where you left off.
               print(f"    {fname}: all payloads filtered/encoded")
 
   # ═══════════════════════════════════════════════════════════════════
-  # PART B — REFLECTED XSS: Test URL parameters from crawl
+  # PART B — REFLECTED XSS: Test URL parameters from crawl + spider
   # ═══════════════════════════════════════════════════════════════════
-  print(f"\n[XSS] Testing {len(AUTH_PARAMS)} URL parameters for reflected XSS")
+  # Combine AUTH_PARAMS (auth crawl) + ALL_LINKS (unauth spider) for full coverage
+  _xss_params = list(AUTH_PARAMS)
+  _xss_seen = set((p['url'].split('?')[0], p['param']) for p in AUTH_PARAMS)
+  for _link in _G.get('ALL_LINKS', set()):
+      if '?' in _link:
+          _lbase = _link.split('?')[0]
+          for _pn, _pv in parse_qs(urlparse(_link).query).items():
+              if (_lbase, _pn) not in _xss_seen:
+                  _xss_params.append({'url': _link, 'param': _pn, 'value': _pv[0]})
+                  _xss_seen.add((_lbase, _pn))
+  print(f"\n[XSS] Testing {len(_xss_params)} URL parameters for reflected XSS")
 
-  for param_info in AUTH_PARAMS:
+  for param_info in _xss_params:
       purl = param_info['url'].split('?')[0]
       pname = param_info['param']
 
@@ -1970,10 +1980,19 @@ After compaction, read plan.md to see exactly where you left off.
           else:
               print(f"    [{target_field}] No SQLi detected (error:{bool(errors)} bool_diff:{diff}b)")
 
-  # ── Part B: Test URL parameters from spider (GET params like /search?q=) ─────
+  # ── Part B: Test URL parameters from spider + auth crawl ─────────────────────
   ALL_LINKS = _G.get('ALL_LINKS', set())
+  AUTH_PARAMS = _G.get('AUTH_PARAMS', [])
+  # Combine: unauth spider links with ?params + auth crawl discovered params
   param_urls = [(u, parse_qs(urlparse(u).query)) for u in ALL_LINKS if '?' in u]
-  print(f"\nSQLi Phase — testing {len(param_urls)} URL parameter endpoints")
+  # Add AUTH_PARAMS (from authenticated crawl) — these may have params not in ALL_LINKS
+  _seen_sqli = set((u, p) for u, pdict in param_urls for p in pdict)
+  for ap in AUTH_PARAMS:
+      _key = (ap['url'].split('?')[0], ap['param'])
+      if _key not in _seen_sqli:
+          param_urls.append((ap['url'], {ap['param']: [ap.get('value', 'test')]}))
+          _seen_sqli.add(_key)
+  print(f"\nSQLi Phase — testing {len(param_urls)} URL parameter endpoints (spider + auth crawl)")
 
   for full_url, params in param_urls:
       base_url = full_url.split('?')[0]
