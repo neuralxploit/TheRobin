@@ -2388,7 +2388,68 @@ for _js_url in sorted(_js_urls):
         _js_findings.extend(_file_findings)
 
 _G['JS_FINDINGS'] = _js_findings
-print(f'\n[JS] Analysis complete — {len(_js_findings)} issue(s) across {len(_js_urls)} files')
+print(f'\n[JS] External JS analysis complete — {len(_js_findings)} issue(s) across {len(_js_urls)} files')
+
+# ── Scan inline <script> blocks + HTML pages for secrets / info disclosure ────
+print(f'\n[INFO-DISC] Scanning {len(_all_discovered)} pages for inline secrets & info disclosure')
+_inline_findings = []
+
+for _page_url, _page_html in _all_discovered.items():
+    try:
+        _soup = BeautifulSoup(_page_html, 'html.parser')
+    except Exception:
+        continue
+
+    # 1. Scan all inline <script> blocks for secrets
+    for _script in _soup.find_all('script'):
+        if _script.string and len(_script.string) > 20:
+            for _pat, _desc, _sev in _SECRET_PATTERNS:
+                for _match in re.finditer(_pat, _script.string, re.I):
+                    _snippet = _match.group(0)[:80]
+                    if any(p in _snippet.lower() for p in ['example', 'placeholder', 'your_', 'xxx', '<', '>']):
+                        continue
+                    print(f'  [{_sev}] {_desc} in inline script on {_page_url}')
+                    print(f'    Match: {_snippet}')
+                    _inline_findings.append({'sev': _sev, 'type': _desc, 'page': _page_url, 'snippet': _snippet})
+
+    # 2. Scan HTML comments for sensitive info
+    import re as _re2
+    for _comment in _soup.find_all(string=lambda t: isinstance(t, type(_soup.new_string(''))) == False and '<!--' in str(t)):
+        pass  # BeautifulSoup handles comments differently
+    for _comment in _re2.findall(r'<!--(.*?)-->', _page_html, _re2.DOTALL):
+        _comment_lower = _comment.lower()
+        if any(kw in _comment_lower for kw in ['password', 'secret', 'key', 'token', 'api',
+               'todo', 'fixme', 'hack', 'debug', 'admin', 'credential', 'internal']):
+            _snippet = _comment.strip()[:120]
+            if len(_snippet) > 5:
+                print(f'  [MEDIUM] Sensitive HTML comment on {_page_url}')
+                print(f'    Comment: {_snippet}')
+                _inline_findings.append({'sev': 'MEDIUM', 'type': 'HTML comment disclosure', 'page': _page_url, 'snippet': _snippet})
+
+    # 3. Check for JSON data embedded in pages (data attributes, script blocks with JSON)
+    for _script in _soup.find_all('script', type=True):
+        if 'json' in (_script.get('type', '').lower()):
+            _json_text = _script.string or ''
+            if len(_json_text) > 10:
+                for _pat, _desc, _sev in _SECRET_PATTERNS:
+                    for _match in re.finditer(_pat, _json_text, re.I):
+                        _snippet = _match.group(0)[:80]
+                        if any(p in _snippet.lower() for p in ['example', 'placeholder', 'your_', 'xxx']):
+                            continue
+                        print(f'  [{_sev}] {_desc} in JSON block on {_page_url}')
+                        _inline_findings.append({'sev': _sev, 'type': _desc, 'page': _page_url, 'snippet': _snippet})
+
+    # 4. Check for exposed data in page (emails, internal paths, debug info)
+    _body_lower = _page_html.lower()
+    if 'traceback' in _body_lower or 'debug' in _body_lower and 'debugger' not in _body_lower:
+        if 'File "' in _page_html or 'line ' in _page_html:
+            print(f'  [HIGH] Debug/traceback info exposed on {_page_url}')
+            _inline_findings.append({'sev': 'HIGH', 'type': 'Debug info disclosure', 'page': _page_url})
+
+if _inline_findings:
+    _js_findings.extend(_inline_findings)
+    _G['JS_FINDINGS'] = _js_findings
+print(f'[INFO-DISC] Inline scan complete — {len(_inline_findings)} finding(s)')
 ```
 
 **Phase 8 (continued) — Prototype Pollution Active Testing**
