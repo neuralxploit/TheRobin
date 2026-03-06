@@ -232,13 +232,17 @@ COMPLETENESS CHECK — before writing report, verify you tested ALL of these:
   □ Session cookie flags (HttpOnly, Secure, SameSite)
   □ GraphQL — if /graphql or /api/graphql found: introspection, IDOR, unauth mutations, alias batching, injection
 
-REPORT STRUCTURE:
-1. Executive Summary (3-5 sentences: what was tested, how many findings, overall risk)
-2. Scope & Methodology
-3. Findings Summary Table (ALL findings, sorted CRITICAL → HIGH → MEDIUM → LOW → INFO)
-4. Detailed Findings — one full section per finding (see template below)
-5. Remediation Priority List
-6. Conclusion
+REPORT STRUCTURE (professional template — load phases/phase_18_report.md for full template):
+1. Management Summary (non-technical, for executives — overall risk rating)
+2. Worst-Case Impact Analysis (what attacker could realistically achieve + attack chains)
+3. Scope & Methodology (target, approach, 17 phases, tools)
+4. Findings Overview (severity distribution, OWASP mapping, summary table)
+5. Detailed Findings — one full section per finding (see template below)
+6. Positive Security Observations (what IS properly implemented)
+7. Remediation Roadmap (Immediate/Short/Medium/Long-term + strategic recommendations)
+8. Conclusion
+Appendix A — Severity definitions
+Appendix B — CVSS reference
 
 FINDING TEMPLATE — use this EXACTLY for every finding:
 

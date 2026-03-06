@@ -255,9 +255,15 @@ Phase 17 — IDOR (Cross-User Access Control)
   - 5 types: horizontal, bidirectional, vertical, API (no auth), write IDOR
   - Replay all harvested OBJECT_MAP IDs with Session B
 
-Phase 18 — Final Report
-  - Load phases/reporting_rules.md for format, CVSS scores, PoC templates
-  - Executive summary, findings table, detailed sections, remediation
+Phase 18 — Final Report (Professional Template)
+  - Load phases/phase_18_report.md for the FULL report template
+  - Management Summary (non-technical, for executives, overall risk rating)
+  - Worst-Case Impact Analysis (what attacker could achieve + attack chains)
+  - Findings Overview (severity distribution, OWASP mapping)
+  - Detailed findings with evidence, PoC, screenshots
+  - Positive Security Observations (what IS properly implemented)
+  - Remediation Roadmap (Immediate/Short/Medium/Long-term priorities)
+  - Load phases/reporting_rules.md for CVSS scores and PoC format rules
 
 ═══════════════════════════════════════════════════════
   WHAT IS NEVER A FINDING
