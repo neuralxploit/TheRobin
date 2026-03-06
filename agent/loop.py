@@ -114,7 +114,7 @@ def _dumb_compact(history: list[dict]) -> list[dict]:
     """
     Fallback: truncate old tool results if the LLM summary call itself fails.
     Keeps the last _KEEP_RECENT messages intact, truncates everything older.
-    CRITICAL: Preserves file paths and important metadata even after compaction.
+    CRITICAL: Preserves file paths, findings, and attack surface data.
     """
     if len(history) <= _KEEP_RECENT + 1:   # +1 for system
         return history
@@ -126,6 +126,27 @@ def _dumb_compact(history: list[dict]) -> list[dict]:
 
     # Fields to preserve even when truncating
     PRESERVE_FIELDS = ["saved", "source_file", "file", "path", "cwd", "workspace_dir"]
+
+    # Extract key attack surface data from old messages to inject as context.
+    # When dumb compaction runs, the agent loses URLs/forms/findings — this
+    # preserves the most critical data so it can continue testing.
+    attack_surface = []
+    for m in old:
+        content = str(m.get("content", ""))
+        # Capture confirmed findings
+        for marker in ("[CRITICAL]", "[HIGH]", "CONFIRMED", "SQLi", "XSS", "SSRF", "RCE"):
+            if marker in content:
+                # Extract the line containing the finding
+                for line in content.split("\n"):
+                    if marker in line:
+                        attack_surface.append(line.strip()[:200])
+                break
+        # Capture discovered URLs/forms from crawl output
+        for marker in ("[FORM]", "[PAGE]", "[FOUND]"):
+            if marker in content:
+                for line in content.split("\n"):
+                    if marker in line:
+                        attack_surface.append(line.strip()[:150])
 
     compacted_old = []
     for m in old:
@@ -153,7 +174,30 @@ def _dumb_compact(history: list[dict]) -> list[dict]:
         else:
             compacted_old.append(m)
 
-    return system + compacted_old + recent
+    # Inject preserved attack surface as a context message so the agent
+    # remembers discovered endpoints/findings even after dumb compaction.
+    result = system + compacted_old + recent
+    if attack_surface:
+        # Deduplicate and limit size
+        seen = set()
+        unique = []
+        for line in attack_surface:
+            if line not in seen:
+                seen.add(line)
+                unique.append(line)
+        unique = unique[:80]  # cap at 80 lines
+        surface_msg = {
+            "role": "assistant",
+            "content": (
+                "PRESERVED ATTACK SURFACE (from dumb compaction):\n"
+                + "\n".join(unique)
+                + "\n\nRead plan.md and findings.log for full state."
+            ),
+        }
+        # Insert after system, before compacted old messages
+        result = system + [surface_msg] + compacted_old + recent
+
+    return result
 
 
 class AgentLoop:

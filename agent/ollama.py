@@ -120,14 +120,16 @@ def simple_chat(
     tools: list[dict],
 ) -> tuple[str, list[dict]]:
     """
-    Non-streaming chat. Used only for compaction/summary calls (short, fast).
-    Main agentic loop uses stream_chat instead.
+    Streaming chat for compaction/summary calls.
+    Uses stream=True so the cloud proxy doesn't kill the connection
+    while the model processes a large context for summarization.
+    Buffers all tokens and returns the complete response.
     """
     payload = json.dumps({
         "model": model,
         "messages": messages,
         "tools": tools,
-        "stream": False,
+        "stream": True,
         "options": {
             "temperature": 0.3,
             "num_ctx": 196608,
@@ -143,9 +145,24 @@ def simple_chat(
 
     try:
         with urllib.request.urlopen(req, timeout=300) as resp:
-            data = json.loads(resp.read())
-            msg = data.get("message", {})
-            return msg.get("content", ""), msg.get("tool_calls", [])
+            content_parts = []
+            tool_calls = []
+            for line in resp:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = chunk.get("message", {})
+                if msg.get("content"):
+                    content_parts.append(msg["content"])
+                if msg.get("tool_calls"):
+                    tool_calls.extend(msg["tool_calls"])
+                if chunk.get("done"):
+                    break
+            return "".join(content_parts), tool_calls
 
     except urllib.error.HTTPError as e:
         _handle_http_error(e)
