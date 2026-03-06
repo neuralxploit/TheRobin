@@ -298,6 +298,8 @@ class App:
                 "  - osint_recon subdomains, dns, whois, wayback, harvester, dorks\n"
                 "  - DuckDuckGo dorks: filetype, admin panels, exposed files, GitHub secrets\n"
                 "  - Note every subdomain, IP, email, SMTP server, technology found\n"
+                "  - DEDUP: if www.X and X resolve to the same IP or one redirects to the other,\n"
+                "    treat them as ONE target. Only list truly distinct hosts.\n"
                 "\n"
                 "STEP 2 — Write plan.md using write_file with this exact structure:\n"
                 "  # Engagement Plan\n"
