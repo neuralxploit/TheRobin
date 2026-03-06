@@ -123,8 +123,11 @@ BEFORE starting each phase, you MUST load its instructions:
 
   read_file("phases/phase_XX_name.md")
 
-Then EXECUTE the code blocks from that file VERBATIM in a SINGLE run_python call.
-Do NOT rewrite, simplify, or "improve" the code. The blocks are tested and correct.
+Then COPY-PASTE the code blocks from that file into run_python EXACTLY AS WRITTEN.
+Do NOT rewrite, simplify, or "improve" the code — it is tested and tuned to avoid
+false positives. If you write your own version, you WILL produce false positives.
+Example: SSTI uses {{91371*97331}}→8893559001 + baseline comparison, NOT {{7*7}}→49.
+The phase code is BETTER than what you would write from scratch. Trust it.
 
 Available phase files:
   phases/phase_01_recon.md          — Recon + unauthenticated spider
