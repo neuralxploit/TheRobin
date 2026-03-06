@@ -61,6 +61,26 @@ _OWASP_MAP = {
     "CRLF":              "A03:2021 Injection",
     "Host Header":       "A05:2021 Security Misconfiguration",
     "Default Cred":      "A07:2021 Auth Failures",
+    "NoSQL":             "A03:2021 Injection",
+    "NoSQLi":            "A03:2021 Injection",
+    "XXE":               "A05:2021 Security Misconfiguration",
+    "Path Traversal":    "A01:2021 Broken Access Control",
+    "LFI":               "A01:2021 Broken Access Control",
+    "Directory Traversal": "A01:2021 Broken Access Control",
+    "Business Logic":    "A04:2021 Insecure Design",
+    "Mass Assignment":   "A01:2021 Broken Access Control",
+    "Race Condition":    "A04:2021 Insecure Design",
+    "Double-Spend":      "A04:2021 Insecure Design",
+    "API":               "A01:2021 Broken Access Control",
+    "Swagger":           "A05:2021 Security Misconfiguration",
+    "Actuator":          "A05:2021 Security Misconfiguration",
+    "Data Exposure":     "A02:2021 Cryptographic Failures",
+    "Price":             "A04:2021 Insecure Design",
+    "Coupon":            "A04:2021 Insecure Design",
+    "Captcha":           "A07:2021 Auth Failures",
+    "Hardcoded":         "A07:2021 Auth Failures",
+    "DOM XSS":           "A03:2021 Injection",
+    "Template Injection": "A03:2021 Injection",
 }
 
 
@@ -264,8 +284,8 @@ def _build_management_summary(target, counts, rating, findings) -> str:
   <h1>1. Management Summary</h1>
   <p>A penetration test was conducted against <strong>{_esc(target)}</strong> to evaluate the security
   posture of the web application. The assessment covered authentication mechanisms, input validation,
-  access controls, session management, and server configuration across 17 testing categories following
-  industry-standard OWASP methodology.</p>
+  access controls, session management, API security, business logic, and server configuration across
+  25 testing categories following industry-standard OWASP methodology.</p>
 
   <p>The assessment identified <strong>{total} vulnerabilities</strong>:
   {counts.get('CRITICAL',0)} Critical, {counts.get('HIGH',0)} High,
@@ -330,20 +350,28 @@ def _build_scope(target, scope, phases_status=None) -> str:
         (1, "Reconnaissance & Crawling"),
         (2, "Security Headers"),
         (3, "Authentication & Session Setup"),
-        (4, "Session Management"),
-        (5, "Cross-Site Scripting (XSS)"),
-        (6, "SQL Injection"),
-        (7, "Cross-Site Request Forgery (CSRF)"),
-        (8, "Technology Fingerprinting & CVE"),
-        (9, "CORS, Open Redirect, SSL/TLS, JWT"),
-        (10, "Command Injection"),
-        (11, "Server-Side Template Injection"),
-        (12, "Server-Side Request Forgery"),
-        (13, "Insecure Deserialization"),
-        (14, "File Upload Testing"),
-        (15, "GraphQL Testing"),
-        (16, "HTTP Protocol Attacks"),
-        (17, "IDOR (Access Control)"),
+        (4, "JavaScript Secret Scanning"),
+        (5, "Session Management"),
+        (6, "XSS — Reflected & Stored"),
+        (7, "XSS — DOM-Based & Template Injection"),
+        (8, "SQL Injection"),
+        (9, "NoSQL Injection"),
+        (10, "Cross-Site Request Forgery (CSRF)"),
+        (11, "Technology Fingerprinting & CVE"),
+        (12, "CORS, Open Redirect, SSL/TLS, JWT"),
+        (13, "Deep JWT Testing"),
+        (14, "Command Injection"),
+        (15, "Server-Side Template Injection"),
+        (16, "Server-Side Request Forgery"),
+        (17, "Insecure Deserialization"),
+        (18, "File Upload Testing"),
+        (19, "GraphQL Testing"),
+        (20, "HTTP Protocol Attacks"),
+        (21, "IDOR / Access Control"),
+        (22, "Business Logic Flaws"),
+        (23, "XXE & Path Traversal"),
+        (24, "API Security & Enumeration"),
+        (25, "Race Conditions"),
     ]
     for num, name in phases:
         status = "Completed"

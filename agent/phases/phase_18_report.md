@@ -78,14 +78,25 @@ else:
 print("\n" + "=" * 70)
 ```
 
-STEP 2 — Generate the professional HTML report:
+STEP 2 — Generate the professional HTML report (MANDATORY — do NOT skip this):
 ```python
 from agent.report_gen import generate_report
+
+# Count findings before generating
+all_f = _G.get('FINDINGS', [])
+print(f"\n[REPORT] Total findings in _G['FINDINGS']: {len(all_f)}")
+for sev in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'):
+    count = sum(1 for f in all_f if f.get('severity','').upper() == sev)
+    if count:
+        print(f"  [{sev}] {count}")
 
 html_path = generate_report(_G, output_path='report.html')
 print(f"\n[OK] Professional HTML report saved to: {html_path}")
 print("     Open in browser and print to PDF for client delivery.")
 ```
+
+If _G['FINDINGS'] is empty, you FORGOT to store findings during testing.
+Go back and add them before generating the report.
 
 STEP 3 — ALSO write a Markdown version (report.md) using write_file for quick reference.
 Use this structure — fill in REAL data from your findings, NOT placeholders:
