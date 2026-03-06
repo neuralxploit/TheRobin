@@ -818,6 +818,18 @@ def write_file(path: str, content: str) -> dict:
 def read_file(path: str) -> dict:
     try:
         target = WORKSPACE_DIR / path
+        # Fall back to project-root-relative path (for agent/phases/*.md etc.)
+        if not target.exists():
+            alt = Path(path)
+            if alt.exists():
+                target = alt
+            else:
+                proj_root = Path(__file__).resolve().parent.parent
+                for prefix in ("", "agent/"):
+                    alt2 = proj_root / (prefix + path)
+                    if alt2.exists():
+                        target = alt2
+                        break
         content = target.read_text(encoding="utf-8")
         # Truncate large files to prevent context overflow
         max_return_size = 50000  # 50KB max in conversation
