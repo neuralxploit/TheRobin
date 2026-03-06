@@ -70,6 +70,11 @@ Examples:
         action="store_true",
         help="Route HTTP requests through Tor (SOCKS5 on localhost:9050)",
     )
+    parser.add_argument(
+        "--headers",
+        metavar="HEADERS",
+        help="Custom headers for all requests (e.g. 'X-Bug-Bounty: HackerOne-user')",
+    )
     args = parser.parse_args()
 
     try:
@@ -81,6 +86,7 @@ Examples:
             scope=args.scope,
             mode=args.mode,
             tor=args.tor,
+            headers=args.headers,
         )
         app.run()
     except KeyboardInterrupt:

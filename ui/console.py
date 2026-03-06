@@ -620,6 +620,7 @@ class PentestConsole:
         "SCOPE":    ("no",  "In-scope hosts (comma-sep)"),
         "MODE":     ("no",  "webapp | osint | full"),
         "TOR":      ("no",  "Route HTTP through Tor (on | off)"),
+        "HEADERS":  ("no",  "Custom headers for all requests (e.g. X-Bug-Bounty: HackerOne-user)"),
     }
 
     def print_options_table(self, options: dict):

@@ -210,6 +210,7 @@ ollama pull glm-4.7:cloud
  /set COOKIE <string>   Set pre-authenticated session cookie (for 2FA apps)
  /set TOR on|off        Toggle Tor SOCKS5 proxy routing
  /set SCOPE dom1,dom2   Define in-scope domains
+ /set HEADERS <string>  Custom headers for all requests (bug bounty auth)
  /options               Display current session configuration
  /model <name>          Quick model switch
  /report                Generate the final Markdown report

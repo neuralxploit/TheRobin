@@ -48,6 +48,7 @@ class App:
         mode: str = "webapp",
         cookie: str = None,
         tor: bool = False,
+        headers: str = None,
     ):
         self.ui = PentestConsole()
         self.model_override = model_override
@@ -66,6 +67,7 @@ class App:
             "SCOPE":    scope    or "",
             "MODE":     mode     or "webapp",
             "TOR":      "on" if tor else "off",
+            "HEADERS":  headers  or "",
         }
         if tor:
             import agent.tools as _tools_mod
@@ -230,7 +232,7 @@ class App:
                 self.ui.print_system("Nothing to clear — pentest has not started yet.")
 
             elif cmd in ("help",):
-                self.ui.print_system("Available options: TARGET  MODEL  USERNAME  PASSWORD  COOKIE  SCOPE  MODE  TOR")
+                self.ui.print_system("Available options: TARGET  MODEL  USERNAME  PASSWORD  COOKIE  SCOPE  MODE  TOR  HEADERS")
                 self.ui.print_system("  set TARGET   https://target.com")
                 self.ui.print_system("  set USERNAME admin")
                 self.ui.print_system("  set PASSWORD secret123")
@@ -238,6 +240,7 @@ class App:
                 self.ui.print_system("  set SCOPE    target.com,api.target.com")
                 self.ui.print_system("  set MODE     webapp | osint | full")
                 self.ui.print_system("  set TOR      on | off  (route HTTP through Tor localhost:9050)")
+                self.ui.print_system("  set HEADERS  'X-Bug-Bounty: HackerOne-username'  (added to all requests)")
                 self.ui.print_system("  set MODEL    glm-5:cloud")
                 self.ui.print_system("  run          — start the pentest")
 
@@ -369,6 +372,13 @@ class App:
                 lines.append(f"Password: {s['PASSWORD']}")
         if s.get("SCOPE"):
             lines.append(f"In-scope: {s['SCOPE']}")
+        if s.get("HEADERS"):
+            lines.append(
+                f"MANDATORY CUSTOM HEADERS — include these in EVERY HTTP request:\n"
+                f"  {s['HEADERS']}\n"
+                f"Add these headers to every requests.get/post/Session call and every "
+                f"curl command in your PoCs. This is required for bug bounty authorization."
+            )
 
         return "\n".join(lines)
 
@@ -475,6 +485,7 @@ class App:
             self.ui.print_system("  /quit               — exit")
             self.ui.print_system("  Tip: set COOKIE 'session=abc123' to skip login on 2FA apps")
             self.ui.print_system("  Tip: set TOR on  — route web_request and osint through Tor (localhost:9050)")
+            self.ui.print_system("  Tip: set HEADERS 'X-Bug-Bounty: HackerOne-user' — added to all requests")
             return True
 
         return False
