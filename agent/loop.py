@@ -469,7 +469,9 @@ class AgentLoop:
                         f"Workspace directory: {_ws}\n"
                         "read_file('plan.md') to see which phases are done and what was found. "
                         "Also read_file('findings.log') for full finding list. "
-                        "Then continue with the next uncompleted phase. Do NOT stop or ask."
+                        "Then continue with the next uncompleted phase IMMEDIATELY. "
+                        "Do NOT stop. Do NOT ask the user anything. Do NOT say 'Ready to proceed?' "
+                        "Just start the next phase right now."
                     ),
                 })
                 _just_compacted = True
