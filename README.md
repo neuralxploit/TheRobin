@@ -143,8 +143,8 @@ The setup script creates a virtual environment, installs all dependencies, and g
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Pull the default model
-ollama pull glm-5:cloud
+# Pull the recommended model
+ollama pull glm-4.7:cloud
 ```
 
 <details>
@@ -153,9 +153,9 @@ ollama pull glm-5:cloud
 **Cloud-proxied** (via Ollama infrastructure — data sent to provider):
 | Model | Vision | Notes |
 |-------|--------|-------|
-| `glm-5:cloud` | ❌ | **Default** — coding-specialized, strong tool calling |
-| `kimi-k2.5:cloud` | ✅ | Vision + tools + thinking, screenshot-verified findings |
-| `glm-4.7:cloud` | ❌ | 198K context, coding-specialized, fast |
+| `glm-4.7:cloud` | ❌ | **Recommended** — 128K context, best tool calling, follows all 26 phases reliably |
+| `glm-5:cloud` | ❌ | Coding-specialized, strong tool calling |
+| `kimi-k2.5:cloud` | ✅ | Vision + tools, but poor phase adherence — not recommended |
 | `kimi-k2:1t-cloud` | ❌ | Strong reasoning, large context |
 | `deepseek-v3.1:671b-cloud` | ❌ | High capability, slower |
 | `qwen3-coder-next:cloud` | ❌ | Good coding performance |
@@ -169,7 +169,7 @@ ollama pull glm-5:cloud
 
 > Cloud-proxied models (`:cloud` suffix) route prompts and target data through Ollama's cloud infrastructure to the model provider. For sensitive engagements, use a locally-running model.
 >
-> **Vision models** (like `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy single-page apps. Non-vision models (like `glm-5:cloud`) still work but skip screenshot analysis.
+> **Vision models** (like `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy single-page apps. Non-vision models (like `glm-4.7:cloud`) still work but skip screenshot analysis. Note: `kimi-k2.5:cloud` has vision but does not follow the testing methodology reliably — `glm-4.7:cloud` is recommended for best results.
 
 </details>
 
