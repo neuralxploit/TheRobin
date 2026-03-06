@@ -22,11 +22,10 @@ from .ollama import simple_chat, stream_chat, ContextOverflowError, _estimate_to
 from .tools import TOOL_SCHEMAS, execute_tool
 from .prompts import get_system_prompt
 
-# System prompt is ~30K tokens. Compact early so the summary call gets a
-# manageable mini snapshot (~50K tokens) that the model can actually summarize.
-# 80K total = ~50K conversation on top of system prompt = 2-3 phases of work.
-# Lower threshold = smaller snapshots = summary succeeds reliably.
-_COMPACT_THRESHOLD = 80_000
+# System prompt is ~30K tokens. Compact before hitting context limits.
+# 100K total = ~70K conversation on top of system prompt = 3-4 phases of work.
+# Mini snapshot is capped at 80K chars (~20K tokens) so summary calls are fast.
+_COMPACT_THRESHOLD = 100_000
 
 # Minimum number of non-system messages before compaction is allowed.
 # Prevents compacting on the first message when there's nothing to compact.
@@ -38,77 +37,28 @@ _MIN_MESSAGES_BEFORE_COMPACT = 10
 _KEEP_RECENT = 4
 
 # Summary request sent to the LLM
-_SUMMARY_PROMPT = """STOP — do NOT call any tools. Do NOT continue the pentest yet.
-
-You are about to have your context window compacted, exactly like Claude Code does.
-Write a PENTEST MEMORY block that captures EVERYTHING found so far so you can
-continue perfectly after the old messages are dropped.
-
-Write it in this exact format (fill in real values — do not leave placeholders):
+_SUMMARY_PROMPT = """STOP — do NOT call any tools. Write a SHORT summary (max 60 lines).
 
 PENTEST MEMORY
 ==============
-Target: <BASE URL>
-Phases completed: <list which phases are done>
-Current phase: <which phase you are on now>
+Target: <url>
+Phases done: <list>
+Current phase: <number>
+Credentials: <user/pass used>
 
-CREDENTIALS USED
-  Session A: username=... password=...
-  Session B: username=... password=... (or: not yet obtained)
+URLS FOUND (one per line, max 30):
+<urls>
 
-PAGES DISCOVERED
-  <list every URL found, one per line>
+CONFIRMED VULNS (one per line):
+[SEV] name — url — proof
 
-FORMS FOUND
-  <list each form: METHOD URL fields=[...]>
+STILL TO TEST:
+<remaining phases>
 
-JAVASCRIPT SECRETS FOUND
-  <list any JS findings: [CRITICAL/HIGH] Type - file:xxx.js - match:...>
-  (or: No JavaScript secrets found if scan complete and clean)
-
-VULNERABILITIES CONFIRMED
-  [CRITICAL] <name> — <URL> — <one line proof>
-  [HIGH]     <name> — <URL> — <one line proof>
-  [MEDIUM]   ...
-  (list every confirmed finding — do not skip any)
-
-SUBDOMAINS / TARGETS FOUND
-  <list every subdomain and IP discovered — mark which are tested vs pending>
-
-EMAIL SECURITY
-  SPF:   <value or MISSING>
-  DKIM:  <value or MISSING>
-  DMARC: <value or MISSING>
-  MX:    <mail server hostnames>
-
-VULNERABILITIES CONFIRMED
-  [CRITICAL] <name> — <URL> — <one line proof>
-  [HIGH]     <name> — <URL> — <one line proof>
-  [MEDIUM]   ...
-  (list every confirmed finding — do not skip any)
-
-VULNERABILITIES STILL TO TEST
-  <list phases or checks not yet done — include each pending subdomain>
-
-OBJECT IDs HARVESTED
-  <list endpoint patterns and IDs found, e.g. /invoice/{1,2,3}>
-
-PLAN FILE
-  plan.md exists: <yes/no>
-  Next action: <exactly what to do next after compaction>
-  IMPORTANT: After compaction, call read_file("plan.md") first to restore full task list.
-
-NOTES
-  <anything else important: cookies, tokens, session state, etc.>
+Next action: read plan.md then continue phase <N>
 ==============
 
-CRITICAL INSTRUCTION AFTER COMPACTION:
-After writing this memory block, you will be given the instruction to CONTINUE THE PENTEST.
-1. read_file("plan.md") — phases are auto-ticked by the system, findings are in findings.log
-2. Continue with the next uncompleted [ ] phase immediately
-Do NOT stop. Do NOT ask the user. Do NOT wait. Just run the next phase.
-
-Write the memory block now. Nothing else."""
+Be CONCISE. Only confirmed findings. No filler. Write it now."""
 
 
 def _dumb_compact(history: list[dict]) -> list[dict]:
@@ -257,9 +207,9 @@ class AgentLoop:
         mini = [{"role": "system",
                  "content": "You are summarizing the findings from an ongoing penetration test."}]
 
-        # Target: keep mini snapshot under 40K tokens (~160K chars) so the
-        # summarizer model has room to think + write the summary.
-        _MINI_CHAR_BUDGET = 150_000
+        # Target: keep mini snapshot under 20K tokens (~80K chars) so the
+        # summarizer model processes fast + has room to write the summary.
+        _MINI_CHAR_BUDGET = 80_000
         mini_chars = 0
 
         # First pass: extract ONLY findings and key results.
