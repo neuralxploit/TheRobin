@@ -41,7 +41,8 @@ def _find_python() -> str:
     return sys.executable
 
 _PYTHON = _find_python()
-_CLEAN_ENV = {**os.environ, "PYTHONWARNINGS": "ignore"}
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+_CLEAN_ENV = {**os.environ, "PYTHONWARNINGS": "ignore", "PENTEST_PROJECT_ROOT": _PROJECT_ROOT}
 
 # ─── Persistent REPL ──────────────────────────────────────────────────────────
 
@@ -58,6 +59,12 @@ warnings.filterwarnings("ignore")
 # These are in globals so agent code can use them without importing.
 import re, base64, hashlib, socket, ssl, time
 from urllib.parse import urljoin, urlparse, urlencode, quote, unquote, parse_qs
+
+# Add project root to path so agent modules are importable (e.g. report_gen)
+_proj_root = os.environ.get('PENTEST_PROJECT_ROOT', '')
+if _proj_root and _proj_root not in sys.path:
+    sys.path.insert(0, _proj_root)
+
 import requests
 
 try:
