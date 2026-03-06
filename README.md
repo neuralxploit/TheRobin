@@ -104,7 +104,7 @@ Every vulnerability finding goes through a strict evidence pipeline before it re
 
 **False positive elimination:** The AI opens each finding URL in the browser and screenshots it. If the screenshot shows a 404, error page, or WAF block instead of the claimed vulnerability, the finding is automatically removed. No more phantom findings.
 
-> **Note:** Screenshot verification requires a vision-capable model (`kimi-k2.5:cloud`). Non-vision models still produce reports with test scripts, server responses, and curl PoCs but skip visual confirmation.
+> **Note:** Screenshot verification requires a vision-capable model. Non-vision models still produce reports with test scripts, server responses, and curl PoCs but skip visual confirmation.
 
 ---
 
@@ -135,8 +135,8 @@ The setup script creates a virtual environment, installs all dependencies, and g
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Pull the default model (vision + tools + thinking)
-ollama pull kimi-k2.5:cloud
+# Pull the default model
+ollama pull glm-5:cloud
 ```
 
 <details>
@@ -145,8 +145,9 @@ ollama pull kimi-k2.5:cloud
 **Cloud-proxied** (via Ollama infrastructure — data sent to provider):
 | Model | Vision | Notes |
 |-------|--------|-------|
-| `kimi-k2.5:cloud` | ✅ | **Default** — vision + tools + thinking, screenshot-verified findings |
-| `glm-4.7:cloud` | ❌ | 198K context, coding-specialized, fast (no vision) |
+| `glm-5:cloud` | ❌ | **Default** — coding-specialized, strong tool calling |
+| `kimi-k2.5:cloud` | ✅ | Vision + tools + thinking, screenshot-verified findings |
+| `glm-4.7:cloud` | ❌ | 198K context, coding-specialized, fast |
 | `kimi-k2:1t-cloud` | ❌ | Strong reasoning, large context |
 | `deepseek-v3.1:671b-cloud` | ❌ | High capability, slower |
 | `qwen3-coder-next:cloud` | ❌ | Good coding performance |
@@ -160,7 +161,7 @@ ollama pull kimi-k2.5:cloud
 
 > Cloud-proxied models (`:cloud` suffix) route prompts and target data through Ollama's cloud infrastructure to the model provider. For sensitive engagements, use a locally-running model.
 >
-> **Vision models** (like `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy single-page apps. Non-vision models still work but skip screenshot analysis.
+> **Vision models** (like `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy single-page apps. Non-vision models (like `glm-5:cloud`) still work but skip screenshot analysis.
 
 </details>
 
@@ -303,8 +304,8 @@ Or toggle at runtime: `/set TOR on`
 │  └──────────┘ └──────┘ └───────────┘ └─────────┘ └──────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │  agent/prompts.py    │  agent/ollama.py  │  agent/osint.py  │
-│  (4K lines of        │  (Ollama HTTP     │  (crt.sh, DNS,   │
-│   methodology)       │   client)         │   WHOIS, Wayback)│
+│  (Lean roadmap +     │  (Ollama HTTP     │  (crt.sh, DNS,   │
+│   on-demand phases)  │   client)         │   WHOIS, Wayback)│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -314,7 +315,7 @@ Or toggle at runtime: `/set TOR on`
 | `app.py` | Session management, command handling, option configuration |
 | `agent/loop.py` | Agentic loop — LLM ↔ tool execution cycle with context compaction |
 | `agent/tools.py` | Tool implementations (REPL, bash, HTTP, file I/O) + JSON schemas |
-| `agent/prompts.py` | System prompt — 4K lines of pentest methodology, code templates, confirmation logic |
+| `agent/prompts.py` | Lean system prompt — rules + phase roadmap (full code loaded on-demand from `agent/phases/`) |
 | `agent/ollama.py` | Ollama HTTP client (stdlib `urllib`, zero external deps) |
 | `agent/osint.py` | OSINT modules — crt.sh subdomains, DNS, WHOIS, Wayback, DuckDuckGo dorking |
 | `ui/console.py` | Rich-based terminal UI — panels, tool output blocks, status indicators |
