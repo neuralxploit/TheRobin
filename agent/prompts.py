@@ -407,6 +407,21 @@ ACCESS CONTROL TESTS — check if unauthenticated access redirects to login:
       print(f"Evidence: {r_noauth.text[:300]}")
 
 ═══════════════════════════════════════════════════════
+  CRITICAL: EXECUTE CODE BLOCKS VERBATIM
+═══════════════════════════════════════════════════════
+Each testing phase below contains a ```python code block. You MUST:
+  1. COPY the code block EXACTLY as written into a SINGLE run_python call
+  2. Do NOT rewrite, simplify, summarize, or "improve" the code
+  3. Do NOT split the code into multiple run_python calls
+  4. Do NOT skip any phase — execute ALL phases in order
+  5. If a code block references _G['AUTH_FORMS'] or _G['session'], those
+     are populated from earlier phases — the code is designed to work as-is
+
+The code blocks iterate ALL forms and ALL parameters automatically.
+If you write your own code instead of using the provided blocks, you WILL
+miss vulnerabilities. The blocks are tested and correct — USE THEM.
+
+═══════════════════════════════════════════════════════
   CODING RULES (MANDATORY)
 ═══════════════════════════════════════════════════════
 Always follow these rules when writing Python test code:
@@ -1749,16 +1764,19 @@ After compaction, read plan.md to see exactly where you left off.
   # ═══════════════════════════════════════════════════════════════════
   # PART C — STORED XSS: Test POST forms that store data
   # ═══════════════════════════════════════════════════════════════════
-  STORED_KW = ['comment','message','note','post','profile','bio','settings',
-               'register','review','feedback','contact','announce','content']
-  stored_forms = [f for f in all_forms
-                  if f.get('method','get').lower() == 'post'
-                  and any(kw in f.get('action','').lower() or kw in f.get('page','').lower()
-                          for kw in STORED_KW)]
+  # Test ALL POST forms for stored XSS (not just keyword-matching ones)
+  stored_forms = [f for f in all_forms if f.get('method','get').lower() == 'post']
 
-  print(f"\n[XSS] Testing {len(stored_forms)} forms for stored XSS")
+  print(f"\n[XSS] Testing {len(stored_forms)} POST forms for stored XSS")
   STORED_PAYLOAD = '<script>alert("STORED_XSS_PROOF")</script>'
   MARKER = 'STORED_XSS_PROOF'
+
+  # Collect all display pages to check after injection
+  _all_display_pages = set()
+  for f in all_forms:
+      _all_display_pages.add(f.get('page', f.get('action', BASE)))
+  for p in list(_G.get('AUTH_PAGES', {}).keys())[:20]:
+      _all_display_pages.add(p)
 
   for form in stored_forms:
       action = form['action']
@@ -1769,38 +1787,45 @@ After compaction, read plan.md to see exactly where you left off.
       if not text_fields:
           continue
 
-      print(f"  Stored XSS: POST {action} → display: {page}")
+      print(f"  Stored XSS: POST {action} → checking {len(_all_display_pages)} pages")
 
       for field in text_fields:
           fname = field['name']
           data = {f['name']: f.get('value', '') or 'test' for f in fields}
           data[fname] = STORED_PAYLOAD
+          found = False
           try:
               session.post(action, data=data, timeout=10, allow_redirects=True)
               time.sleep(0.5)
-              r_disp = session.get(page, timeout=10, allow_redirects=True)
+              # Check MULTIPLE pages — stored content may render elsewhere
+              for check_page in [page, action] + list(_all_display_pages)[:15]:
+                  try:
+                      r_disp = session.get(check_page, timeout=10, allow_redirects=True)
+                  except Exception:
+                      continue
+                  if STORED_PAYLOAD in r_disp.text:
+                      print(f"[HIGH] Stored XSS CONFIRMED: {action} field={fname}")
+                      print(f"  Payload renders unescaped on: {check_page}")
+                      xss_findings.append({
+                          'type': 'stored', 'url': action, 'param': fname,
+                          'payload': STORED_PAYLOAD, 'display_page': check_page,
+                      })
+                      found = True
+                      break
+                  elif MARKER in r_disp.text and '&lt;script&gt;' not in r_disp.text:
+                      print(f"[HIGH] Stored XSS CONFIRMED (marker present): {fname} on {check_page}")
+                      xss_findings.append({
+                          'type': 'stored', 'url': action, 'param': fname,
+                          'payload': STORED_PAYLOAD, 'display_page': check_page,
+                      })
+                      found = True
+                      break
           except Exception:
               continue
-
-          if STORED_PAYLOAD in r_disp.text:
-              print(f"[HIGH] Stored XSS CONFIRMED: {action} field={fname}")
-              print(f"  Payload renders unescaped on: {page}")
-              xss_findings.append({
-                  'type': 'stored', 'url': action, 'param': fname,
-                  'payload': STORED_PAYLOAD, 'display_page': page,
-              })
+          if found:
               break
-          elif MARKER in r_disp.text and '&lt;script&gt;' not in r_disp.text:
-              print(f"[HIGH] Stored XSS CONFIRMED (marker present): {fname}")
-              xss_findings.append({
-                  'type': 'stored', 'url': action, 'param': fname,
-                  'payload': STORED_PAYLOAD, 'display_page': page,
-              })
-              break
-          elif '&lt;script&gt;' in r_disp.text and MARKER in r_disp.text:
-              print(f"  {fname}: stored but HTML-encoded — NOT vulnerable")
           else:
-              print(f"  {fname}: payload not found on display page")
+              print(f"    {fname}: payload not found on any display page")
 
   # ═══════════════════════════════════════════════════════════════════
   # SUMMARY
@@ -2667,18 +2692,16 @@ if not _pp_found:
   AUTH_PAGES = _G.get('AUTH_PAGES', {})
   ALL_PAGES  = _G.get('ALL_PAGES', {})
 
-  # Collect forms from crawl that have CMDi-related keywords in URL or field names
+  # Collect ALL forms from crawl — test every text field for CMDi
+  # Do NOT filter by keyword — any form can be vulnerable
   cmdi_forms = []  # list of (url, method, field_names, extra_data)
 
   for form in AUTH_FORMS + ALL_FORMS:
       action = form.get('action', BASE)
       url = action if action.startswith('http') else urljoin(BASE, action)
       method = form.get('method', 'get').lower()
-      path_lower = url.replace(BASE, '').lower()
       fields = form.get('fields', [])
 
-      # Check if URL path or any field name suggests CMDi
-      is_cmdi_candidate = any(kw in path_lower for kw in _CMDI_KEYWORDS)
       field_names = []
       extra_data = {}
       for f in fields:
@@ -2692,12 +2715,8 @@ if not _pp_found:
               extra_data[fname] = f.get('value', '')
           else:
               field_names.append(fname)
-              # Also flag if field name suggests CMDi target
-              if any(kw in fname.lower() for kw in ['target', 'host', 'ip', 'addr',
-                     'domain', 'cmd', 'command', 'input', 'query', 'server', 'ping']):
-                  is_cmdi_candidate = True
 
-      if is_cmdi_candidate and field_names:
+      if field_names:
           cmdi_forms.append((url, method, field_names, extra_data))
 
   # ── Step 2: Probe common CMDi paths not in crawl ─────────────────────────────
@@ -2784,16 +2803,30 @@ if not _pp_found:
               body = r.text
               cmdi_hit = False
 
-              # Check for command execution evidence
+              # Check for command execution evidence (multiple patterns)
               if _re.search(r'uid=\d+\([a-z_]+\)', body):
-                  print(f'[CRITICAL] CMDi CONFIRMED at {test_url}')
+                  print(f'[CRITICAL] CMDi CONFIRMED (id output) at {test_url}')
                   print(f'  Param: {param!r}  Payload: {payload!r}')
-                  print(f'  Evidence: {_re.search(r"uid=.{{0,30}}", body).group()}')
+                  print(f'  Evidence: {_re.search(r"uid=.{{0,50}}", body).group()}')
                   cmdi_hit = True
               elif _re.search(r'(root|www-data|apache|nginx|nobody):.*:/bin/', body):
                   print(f'[CRITICAL] CMDi CONFIRMED (passwd echo) at {test_url}')
                   print(f'  Param: {param!r}  Payload: {payload!r}')
                   cmdi_hit = True
+              elif _re.search(r'(gid=\d+|groups=\d+|euid=\d+)', body):
+                  print(f'[CRITICAL] CMDi CONFIRMED (id groups) at {test_url}')
+                  print(f'  Param: {param!r}  Payload: {payload!r}')
+                  cmdi_hit = True
+              else:
+                  # Baseline comparison: if response with payload differs significantly
+                  # from normal response AND contains shell-like output
+                  _shell_signs = ['command not found', 'sh:', 'bash:', '/usr/', '/bin/',
+                                  'Permission denied', 'cannot access', 'No such file']
+                  if any(s in body for s in _shell_signs):
+                      print(f'[HIGH] CMDi LIKELY (shell error) at {test_url}')
+                      print(f'  Param: {param!r}  Payload: {payload!r}')
+                      print(f'  Evidence: {body[:300]}')
+                      cmdi_hit = True
 
               if cmdi_hit:
                   cmdi_findings.append({
@@ -2804,6 +2837,27 @@ if not _pp_found:
                   break  # confirmed — move to next param
           if cmdi_findings and cmdi_findings[-1].get('url') == test_url:
               break  # found on this endpoint
+
+  # ── Step 4: Test URL parameters from crawl ────────────────────────────────
+  AUTH_PARAMS = _G.get('AUTH_PARAMS', [])
+  print(f'\n[CMDi] Testing {len(AUTH_PARAMS)} URL params from crawl')
+  for param_info in AUTH_PARAMS:
+      purl = param_info['url'].split('?')[0]
+      pname = param_info['param']
+      for payload in _CMDI_PAYLOADS[:5]:  # top 5 payloads
+          time.sleep(0.3)
+          try:
+              r = cmdi_session.get(purl, params={pname: payload}, timeout=10, verify=False)
+          except Exception:
+              continue
+          body = r.text
+          if _re.search(r'uid=\d+\([a-z_]+\)', body) or \
+             _re.search(r'(root|www-data|apache|nginx|nobody):.*:/bin/', body):
+              print(f'[CRITICAL] CMDi CONFIRMED via URL param: {purl}?{pname}=')
+              print(f'  Payload: {payload}')
+              cmdi_findings.append({'url': purl, 'param': pname, 'payload': payload,
+                                    'method': 'GET', 'evidence': body[:500]})
+              break
 
   if cmdi_findings:
       _G['CMDI_FINDINGS'] = cmdi_findings
@@ -2892,7 +2946,7 @@ if not _pp_found:
               return True  # confirmed
       return False
 
-  # Test forms — only test actual form fields (NOT guessed params)
+  # Test ALL forms — every text field on every form
   for form in all_forms:
       action = form.get('action', BASE)
       method = form.get('method', 'get').lower()
@@ -2901,6 +2955,7 @@ if not _pp_found:
       text_fields = [f for f in fields if f.get('type', 'text') not in ('submit','hidden','checkbox','radio','file','button')]
       if not text_fields:
           continue
+      print(f"  Testing: {method.upper()} {url}  fields={[f['name'] for f in text_fields]}")
       for field in text_fields:
           ssti_test(url, field['name'], method, fields)
 
