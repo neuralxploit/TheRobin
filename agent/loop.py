@@ -22,17 +22,18 @@ from .ollama import simple_chat, stream_chat, ContextOverflowError, _estimate_to
 from .tools import TOOL_SCHEMAS, execute_tool
 from .prompts import get_system_prompt
 
-# System prompt is ~61K tokens (expanded to 18 phases with full code blocks).
-# Threshold must leave enough room for conversation before compaction fires.
-# 120K gives ~59K of working conversation space on top of the system prompt.
-_COMPACT_THRESHOLD = 120_000
+# System prompt is ~30K tokens. Compact early so the summary call gets a
+# manageable mini snapshot (~50K tokens) that the model can actually summarize.
+# 80K total = ~50K conversation on top of system prompt = 2-3 phases of work.
+# Lower threshold = smaller snapshots = summary succeeds reliably.
+_COMPACT_THRESHOLD = 80_000
 
 # Minimum number of non-system messages before compaction is allowed.
 # Prevents compacting on the first message when there's nothing to compact.
 _MIN_MESSAGES_BEFORE_COMPACT = 10
 
 # 4 messages = last 2 tool call+result pairs. Small enough that:
-#   system(61K) + summary(2K) + recent(4K) = 67K < 120K threshold
+#   system(30K) + summary(2K) + recent(4K) = 36K < 80K threshold
 # So the rebuilt history never immediately re-triggers compaction.
 _KEEP_RECENT = 4
 
@@ -256,41 +257,60 @@ class AgentLoop:
         mini = [{"role": "system",
                  "content": "You are summarizing the findings from an ongoing penetration test."}]
 
+        # Target: keep mini snapshot under 40K tokens (~160K chars) so the
+        # summarizer model has room to think + write the summary.
+        _MINI_CHAR_BUDGET = 150_000
+        mini_chars = 0
+
+        # First pass: extract ONLY findings and key results.
+        # Skip tool results entirely — they bloat the snapshot.
+        # The important data (findings, URLs, forms) is in assistant messages.
         for m in self.history:
             role = m.get("role", "")
             if role == "system":
                 continue          # skip big system prompt
             elif role == "tool":
-                # Skip images in summary — screenshots are ephemeral
+                # Only keep tool results that contain findings markers
                 content = m.get("content", "")
-                try:
-                    data = json.loads(content)
-                    compacted = {}
-                    for field in PRESERVE_FIELDS:
-                        if field in data:
-                            compacted[field] = data[field]
-                    # Truncate preview to keep mini small
-                    if "preview" in compacted:
-                        compacted["preview"] = compacted["preview"][:300]
-                    # Add tail of stdout/stderr (run_python / bash results)
-                    tail = (data.get("stdout") or data.get("stderr") or "")[-120:]
-                    if tail:
-                        compacted["stdout"] = tail + "…"
-                    compacted["compacted"] = True
-                    short = json.dumps(compacted, separators=(',', ':'))
-                except Exception:
-                    short = content[-120:] + "…"
-                mini.append({"role": "tool", "content": short})
+                has_finding = any(k in content for k in (
+                    "[CRITICAL]", "[HIGH]", "CONFIRMED", "FINDINGS",
+                    "SSRF", "SQLi", "XSS", "RCE", "IDOR", "SSTI",
+                ))
+                if has_finding:
+                    # Extract just the finding lines
+                    lines = []
+                    for line in content.split("\n"):
+                        if any(k in line for k in (
+                            "[CRITICAL]", "[HIGH]", "[MEDIUM]", "CONFIRMED",
+                            "FINDING", "vulnerability", "bypass",
+                        )):
+                            lines.append(line.strip()[:150])
+                    if lines:
+                        short = "\n".join(lines[:20])
+                    else:
+                        short = content[:200] + "…"
+                else:
+                    short = "[tool output compacted]"
+                if mini_chars + len(short) < _MINI_CHAR_BUDGET:
+                    mini.append({"role": "tool", "content": short})
+                    mini_chars += len(short)
             elif role == "assistant":
-                # Truncate long assistant messages — the model writes verbose reasoning
-                # that doesn't help summarization but bloats the mini snapshot.
                 content = str(m.get("content", ""))
-                if len(content) > 2000:
-                    content = "[…earlier reasoning truncated…]\n" + content[-1500:]
-                # Strip tool_calls from mini — implied by the tool results
-                mini.append({"role": "assistant", "content": content})
+                # Keep short messages in full, aggressively truncate long ones
+                if len(content) > 800:
+                    content = content[:300] + "\n[…truncated…]\n" + content[-300:]
+                if mini_chars + len(content) < _MINI_CHAR_BUDGET:
+                    mini.append({"role": "assistant", "content": content})
+                    mini_chars += len(content)
             else:
-                mini.append(m)   # user messages kept in full
+                # User messages — keep short
+                content = str(m.get("content", ""))
+                if len(content) > 500:
+                    content = content[:200] + "…"
+                if mini_chars + len(content) < _MINI_CHAR_BUDGET:
+                    mini.append(m if len(str(m.get("content",""))) <= 500
+                                else {"role": "user", "content": content})
+                    mini_chars += len(content)
 
         mini.append({"role": "user", "content": _SUMMARY_PROMPT})
 
