@@ -22,14 +22,17 @@ from .ollama import simple_chat, stream_chat, ContextOverflowError, _estimate_to
 from .tools import TOOL_SCHEMAS, execute_tool
 from .prompts import get_system_prompt
 
-# System prompt is ~32K tokens. Threshold must be high enough to allow
-# meaningful conversation but low enough that after compaction the rebuilt
-# history (system 32K + summary 1K + 4 recent ~4K = ~37K) stays under it.
-# 60K gives ~28K of working conversation space before compaction fires.
-_COMPACT_THRESHOLD = 60_000
+# System prompt is ~61K tokens (expanded to 18 phases with full code blocks).
+# Threshold must leave enough room for conversation before compaction fires.
+# 120K gives ~59K of working conversation space on top of the system prompt.
+_COMPACT_THRESHOLD = 120_000
+
+# Minimum number of non-system messages before compaction is allowed.
+# Prevents compacting on the first message when there's nothing to compact.
+_MIN_MESSAGES_BEFORE_COMPACT = 10
 
 # 4 messages = last 2 tool call+result pairs. Small enough that:
-#   system(32K) + summary(1K) + recent(4K) = 37K < 60K threshold
+#   system(61K) + summary(2K) + recent(4K) = 67K < 120K threshold
 # So the rebuilt history never immediately re-triggers compaction.
 _KEEP_RECENT = 4
 
@@ -404,7 +407,9 @@ class AgentLoop:
 
             # Proactive semantic compaction — before hitting the wall.
             # Skip if we just compacted this iteration (error recovery already ran compact).
-            if tokens > _COMPACT_THRESHOLD and not _just_compacted:
+            # Skip if there aren't enough messages yet (nothing to compact on fresh start).
+            non_system_count = sum(1 for m in self.history if m.get("role") != "system")
+            if tokens > _COMPACT_THRESHOLD and not _just_compacted and non_system_count >= _MIN_MESSAGES_BEFORE_COMPACT:
                 self.on_status("Context growing — compacting now...")
                 info = self._semantic_compact()
                 self.on_token(
