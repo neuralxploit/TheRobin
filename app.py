@@ -56,6 +56,7 @@ class App:
         self.agent = None
         self._running = True
         self._agent_busy = threading.Event()
+        self._cleared = False
 
         # Session options — shown in Metasploit-style table, editable before run
         self.session = {
@@ -143,7 +144,7 @@ class App:
             # Check if it's a command (with or without / prefix)
             first_word = user_input.lstrip("/").split(None, 1)[0].lower()
             known_cmds = ("quit", "exit", "clear", "set", "options", "show",
-                          "model", "compact", "report", "help")
+                          "model", "compact", "report", "help", "run")
             if user_input.startswith("/") or first_word in known_cmds:
                 handled = self._handle_command(user_input)
                 if not handled:
@@ -427,7 +428,8 @@ class App:
             from agent.tools import reset_repl, reset_browser
             reset_repl()     # kill REPL so all variables are gone
             reset_browser()  # close browser session
-            self.ui.print_system("Session history, REPL state, and browser cleared.")
+            self._cleared = True  # flag so next "run" re-sends initial message
+            self.ui.print_system("Session cleared. Set new TARGET if needed, then type 'run' to start.")
             return True
 
         elif command == "set":
@@ -486,6 +488,27 @@ class App:
             self.ui.print_system("  Tip: set COOKIE 'session=abc123' to skip login on 2FA apps")
             self.ui.print_system("  Tip: set TOR on  — route web_request and osint through Tor (localhost:9050)")
             self.ui.print_system("  Tip: set HEADERS 'X-Bug-Bounty: HackerOne-user' — added to all requests")
+            return True
+
+        elif command == "run":
+            # Re-run with current session options (useful after /clear + new target)
+            if not self.session.get("TARGET"):
+                self.ui.print_system("  [!] No TARGET set. Use: /set TARGET https://example.com")
+                return True
+            # Rebuild agent with fresh system prompt for new mode
+            self.agent = AgentLoop(
+                model=self.model,
+                on_token=self._on_token,
+                on_tool_call=self._on_tool_call,
+                on_tool_result=self._on_tool_result,
+                on_status=self._on_status,
+                mode=self.session.get("MODE", "webapp"),
+            )
+            initial = self._build_initial_message()
+            self.ui.print_system(f"Starting new engagement: {self.session['TARGET']}")
+            self.ui.print_user(initial)
+            self._run_agent(initial)
+            self._cleared = False
             return True
 
         return False
