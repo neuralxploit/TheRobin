@@ -226,8 +226,15 @@ RESPONSE FIELD — EXTRACT THE PROOF, NOT THE WHOLE PAGE:
 
   SQLi:
     WRONG: store entire login page HTML
-    RIGHT: store the JSON/data that proves bypass — e.g., '{"token":"eyJ...","role":"admin"}'
-    HOW:   r.json() or extract the relevant <div> from the response
+    WRONG: just say "bypass confirmed"
+    RIGHT: show the ACTUAL DATA the server returned because of the injection:
+      - Auth bypass: the session/token/cookie you received + the user data (username, role, email)
+      - UNION: the dumped rows/columns — e.g., "admin|admin@corp.com|md5hash|role:admin"
+      - Error-based: the DB error showing table/column names — e.g., "SQLite3: no such column: ..."
+      - Blind: the different responses that prove true/false — e.g., "true='Welcome' vs false='Invalid'"
+    HOW:   Show full server response body (parsed). If HTML, extract the data with BeautifulSoup.
+           Example: "HTTP 302 → Set-Cookie: session=abc123\nRedirected to /dashboard\n
+                     Dashboard shows: Welcome admin (role: administrator, email: admin@corp.com)"
 
   XSS:
     WRONG: store entire page
