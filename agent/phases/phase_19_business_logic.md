@@ -221,6 +221,104 @@
           except Exception:
               continue
 
+  # ══════════════════════════════════════════════════════════════
+  # PART E — Privilege Escalation (regular user → admin functions)
+  # ══════════════════════════════════════════════════════════════
+  # Test if a regular user can access admin endpoints discovered during crawl
+  AUTH_PAGES = _G.get('AUTH_PAGES', {})
+  discovered_creds = _G.get('discovered_creds', [])
+
+  # Find admin paths from crawl
+  ADMIN_KEYWORDS = ['admin', 'manage', 'moderator', 'staff', 'superuser',
+                    'control-panel', 'backoffice', 'internal']
+  admin_paths = set()
+  for url in list(AUTH_PAGES.keys()) + list(_G.get('ALL_LINKS', set())):
+      if any(kw in url.lower() for kw in ADMIN_KEYWORDS):
+          admin_paths.add(url)
+
+  # Also try common admin paths
+  for path in ['/admin', '/admin/', '/admin/dashboard', '/admin/users', '/admin/settings',
+               '/admin/config', '/admin/logs', '/manage', '/panel', '/staff']:
+      admin_paths.add(urljoin(BASE, path))
+
+  print(f"\n[LOGIC] Testing privilege escalation on {len(admin_paths)} admin paths")
+
+  # Get a non-admin session (use discovered non-admin creds or session_b)
+  session_b = _G.get('session_b')
+  non_admin_session = session_b
+
+  if not non_admin_session and discovered_creds:
+      # Log in with a non-admin discovered account
+      import requests as _req
+      for dc in discovered_creds:
+          if 'admin' not in dc.get('username', '').lower():
+              ns = _req.Session()
+              ns.verify = False
+              login_url = _G.get('login_url', BASE + '/login')
+              user_field = _G.get('user_field', 'username')
+              pass_field = _G.get('pass_field', 'password')
+              r = ns.post(login_url, data={
+                  user_field: dc['username'], pass_field: dc['password']
+              }, allow_redirects=True)
+              if 'login' not in r.url.lower() or 'logout' in r.text.lower():
+                  non_admin_session = ns
+                  print(f"  Using {dc['username']} as non-admin user for privilege testing")
+                  break
+
+  if non_admin_session:
+      for admin_url in sorted(admin_paths):
+          time.sleep(0.3)
+          try:
+              r = non_admin_session.get(admin_url, timeout=8, allow_redirects=True)
+              if r.status_code == 200 and 'login' not in r.url.lower():
+                  body = r.text.lower()
+                  # Check if it's a real admin page, not a redirect or error
+                  if any(kw in body for kw in ['admin', 'manage', 'users', 'settings', 'dashboard', 'config']):
+                      if 'access denied' not in body and 'forbidden' not in body and 'not authorized' not in body:
+                          print(f"  [CRITICAL] Privilege escalation: non-admin can access {admin_url}")
+                          print(f"    Response: {r.text[:200]}")
+                          logic_findings.append({
+                              'url': admin_url, 'type': 'privilege-escalation',
+                              'desc': f'Non-admin user can access admin page',
+                              'evidence': r.text[:300],
+                          })
+              elif r.status_code in (401, 403):
+                  print(f"  [OK] {admin_url} — properly restricted ({r.status_code})")
+          except Exception:
+              continue
+  else:
+      print("  [INFO] No non-admin session available for privilege escalation testing")
+
+  # ══════════════════════════════════════════════════════════════
+  # PART F — Debug Mode / Information Disclosure
+  # ══════════════════════════════════════════════════════════════
+  DEBUG_PATHS = ['/debug', '/debug/', '/console', '/_debug',
+                 '/server-info', '/server-status', '/status',
+                 '/env', '/environment', '/config', '/phpinfo.php',
+                 '/elmah.axd', '/trace.axd', '/_profiler']
+
+  print(f"\n[LOGIC] Checking for debug/info disclosure endpoints")
+  for path in DEBUG_PATHS:
+      url = urljoin(BASE, path)
+      try:
+          r = session.get(url, timeout=6)
+          if r.status_code == 200:
+              body = r.text.lower()
+              # Must contain actual debug/config data, not just an HTML page
+              if any(kw in body for kw in ['traceback', 'debugger', 'stack trace', 'secret_key',
+                                            'database', 'db_host', 'password', 'environment',
+                                            'configuration', 'php version', 'debug = true']):
+                  if '<html' not in body[:100] or len(r.text) > 5000:
+                      print(f"  [HIGH] Debug/info disclosure: {url}")
+                      print(f"    Preview: {r.text[:200]}")
+                      logic_findings.append({
+                          'url': url, 'type': 'debug-mode',
+                          'desc': f'Debug/information disclosure endpoint active',
+                          'evidence': r.text[:300],
+                      })
+      except Exception:
+          continue
+
   # Summary
   print(f"\n=== BUSINESS LOGIC SUMMARY: {len(logic_findings)} issues found ===")
   for f in logic_findings:

@@ -11,6 +11,8 @@
   session = _G.get('session_a') or _G.get('session')
   session_b = _G.get('session_b')
   ALL_LINKS = _G.get('ALL_LINKS', set())
+  AUTH_PAGES = _G.get('AUTH_PAGES', {})
+  ALL_PAGES  = _G.get('ALL_PAGES', {})
 
   api_findings = []
 
@@ -97,11 +99,25 @@
   for ep in discovered_endpoints:
       API_ENUM_PATHS.append(ep['path'])
 
-  # Also add API paths found during crawl
+  # CRITICAL: Add ALL paths from crawl that look like API/data endpoints
+  # Not just /api/* — also check ALL authenticated pages with integer IDs
   for link in ALL_LINKS:
-      if '/api/' in link or '/rest/' in link:
-          path = urlparse(link).path
-          if path not in API_ENUM_PATHS:
+      path = urlparse(link).path
+      if path not in API_ENUM_PATHS:
+          if '/api/' in link or '/rest/' in link:
+              API_ENUM_PATHS.append(path)
+
+  # Add ALL discovered endpoints from AUTH_PAGES + ALL_PAGES that contain IDs
+  # These are real endpoints the app serves — test them ALL for auth bypass
+  for page_url in list(AUTH_PAGES.keys()) + list(ALL_PAGES.keys()):
+      path = urlparse(page_url).path
+      if path and path not in API_ENUM_PATHS:
+          # Include any path with integer IDs (e.g., /profile/1, /invoice/3, /user/2/edit)
+          if re.search(r'/\d+', path):
+              API_ENUM_PATHS.append(path)
+          # Include any path with API-like structure
+          if any(seg in path.lower() for seg in ['user', 'profile', 'invoice', 'order',
+                  'account', 'admin', 'config', 'setting', 'data', 'export', 'backup']):
               API_ENUM_PATHS.append(path)
 
   print(f"\n[API] Enumerating {len(API_ENUM_PATHS)} API endpoints")

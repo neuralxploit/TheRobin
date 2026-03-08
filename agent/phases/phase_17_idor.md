@@ -1,26 +1,135 @@
 **Phase 17 — IDOR (Cross-User Access Control)**
 
-  All other phases are now complete. Before running IDOR tests, ask the user
-  for a second account if not already set:
-
-  STOP HERE — ask the user for a second account:
+  IDOR TESTING — AUTONOMOUS SECOND ACCOUNT ACQUISITION
   ─────────────────────────────────────────────────────────────────
-  Print this message and wait for the user to reply:
+  Rule #0 applies: NEVER stop, NEVER ask the user for input.
+  You MUST autonomously obtain a second account using this priority order:
 
-    "=== ALL PHASES COMPLETE — STARTING IDOR PHASE ===
-     Session A mapped {N} pages and collected {M} object IDs across {P} endpoint patterns.
+  1. Use _G['creds_b'] if already set (from CLI --user2/--pass2 or Phase 3 discovery)
+  2. Use credentials discovered during Phase 3 default credential testing (_G['discovered_creds'])
+  3. Try to self-register a new account on /register, /signup, /create-account, /api/register
+  4. If all fail, proceed with vertical IDOR only (no horizontal testing)
 
-     To fully test IDOR I need to replay every endpoint using a DIFFERENT user's session.
-     Please provide credentials for a second account:
-       username: ?
-       password: ?
+  NEVER skip IDOR testing entirely. At minimum, always test:
+  - Vertical IDOR: regular user accessing /admin/* paths
+  - API IDOR: unauthenticated access to API endpoints
+  - ID enumeration: incrementing/decrementing IDs on all discovered endpoints
 
-     If you do not have a second account I can:
-       a) Self-register a new account on the app
-       b) Test vertical IDOR only (regular user vs admin-only paths)
-       c) Skip IDOR testing entirely"
+  ─────────────────────────────────────────────────────────────────
+  AUTO-REGISTER SECOND ACCOUNT (if no creds_b available):
+  ─────────────────────────────────────────────────────────────────
 
-  Store the answer in _G['creds_b'] before running the IDOR tests below.
+  ```python
+  import requests, time, re
+  from urllib.parse import urljoin
+  from bs4 import BeautifulSoup
+
+  BASE    = _G['BASE']
+  session = _G.get('session_a') or _G.get('session')
+  creds_b = _G.get('creds_b')
+
+  if not creds_b:
+      # Try discovered creds from Phase 3 default testing
+      discovered = _G.get('discovered_creds', [])
+      if discovered:
+          # Pick a non-admin account different from creds_a
+          creds_a_user = _G.get('creds_a', {}).get('username', '')
+          for dc in discovered:
+              if dc.get('username') != creds_a_user and 'admin' not in dc.get('username', '').lower():
+                  creds_b = dc
+                  print(f"[IDOR] Using discovered credentials: {dc['username']}")
+                  break
+          if not creds_b and discovered:
+              creds_b = discovered[0]  # use any discovered cred
+              print(f"[IDOR] Using discovered credentials: {creds_b['username']}")
+
+  if not creds_b:
+      # Try self-registration
+      REGISTER_PATHS = ['/register', '/signup', '/sign-up', '/create-account',
+                        '/api/register', '/api/signup', '/api/users', '/join',
+                        '/account/register', '/user/register']
+      reg_session = requests.Session()
+      reg_session.verify = False
+      reg_session.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'
+
+      new_user = f'idortest_{int(time.time()) % 10000}'
+      new_pass = 'IdorTest123!'
+      new_email = f'{new_user}@test.local'
+
+      for reg_path in REGISTER_PATHS:
+          reg_url = BASE + reg_path
+          try:
+              # Try GET first to find form
+              r = reg_session.get(reg_url, timeout=6, allow_redirects=True)
+              if r.status_code == 404:
+                  continue
+
+              # Try HTML form registration
+              soup = BeautifulSoup(r.text, 'html.parser')
+              form = soup.find('form')
+              if form:
+                  action = urljoin(reg_url, form.get('action', reg_url))
+                  fields = {}
+                  for inp in form.find_all(['input', 'textarea']):
+                      name = inp.get('name', '')
+                      if not name:
+                          continue
+                      if 'user' in name.lower() or 'name' in name.lower():
+                          fields[name] = new_user
+                      elif 'email' in name.lower():
+                          fields[name] = new_email
+                      elif 'pass' in name.lower():
+                          fields[name] = new_pass
+                      elif inp.get('type') == 'hidden':
+                          fields[name] = inp.get('value', '')
+                      else:
+                          fields[name] = 'test'
+                  if fields:
+                      r2 = reg_session.post(action, data=fields, timeout=10, allow_redirects=True)
+                      if r2.status_code in (200, 201, 302) and 'error' not in r2.text.lower()[:300]:
+                          creds_b = {'username': new_user, 'password': new_pass}
+                          print(f"[IDOR] Self-registered account: {new_user}")
+                          break
+
+              # Try JSON API registration
+              for payload in [
+                  {'username': new_user, 'password': new_pass, 'email': new_email},
+                  {'user': new_user, 'pass': new_pass, 'email': new_email},
+                  {'name': new_user, 'password': new_pass, 'email': new_email},
+              ]:
+                  r3 = reg_session.post(reg_url, json=payload, timeout=10)
+                  if r3.status_code in (200, 201) and 'error' not in r3.text.lower()[:200]:
+                      creds_b = {'username': new_user, 'password': new_pass}
+                      print(f"[IDOR] Self-registered via API: {new_user}")
+                      break
+              if creds_b:
+                  break
+          except Exception:
+              continue
+
+  if creds_b:
+      _G['creds_b'] = creds_b
+      # Log in as Session B
+      session_b = requests.Session()
+      session_b.verify = False
+      session_b.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'
+      login_url = _G.get('login_url', BASE + '/login')
+      user_field = _G.get('user_field', 'username')
+      pass_field = _G.get('pass_field', 'password')
+      r_b = session_b.post(login_url, data={
+          user_field: creds_b['username'],
+          pass_field: creds_b['password'],
+      }, allow_redirects=True)
+      if 'login' not in r_b.url.lower() or 'logout' in r_b.text.lower():
+          _G['session_b'] = session_b
+          print(f"[OK] Session B logged in as {creds_b['username']}")
+      else:
+          print(f"[WARN] Session B login failed for {creds_b['username']} — vertical IDOR only")
+          _G['session_b'] = None
+  else:
+      print("[INFO] No second account available — testing vertical IDOR + API IDOR only")
+      _G['session_b'] = None
+  ```
 
   IDOR TESTING — REPLAY HARVESTED IDs WITH SESSION B
   ─────────────────────────────────────────────────────────────────
@@ -31,43 +140,7 @@
        → if Session B gets Session A's private data = IDOR confirmed
     4. Then Session B crawls its own objects → Session A tests those too (bidirectional)
 
-   Four IDOR types covered automatically:
-
-   ─────────────────────────────────────────────────────────────────────────
-   MANDATORY: CHECK FOR SECOND ACCOUNT CREDENTIALS
-   ─────────────────────────────────────────────────────────────────────────
-   IDOR testing requires TWO different user accounts.
-
-   Check if second account credentials are available:
-     creds_b = _G.get('creds_b')
-
-   if not creds_b:
-     # STOP and ask user for input - DO NOT proceed with IDOR tests
-     print("\n" + "="*70)
-     print("PHASE 11: IDOR TESTING - SECOND ACCOUNT REQUIRED")
-     print("="*70)
-     print()
-     print("IDOR testing requires TWO different user accounts to test")
-     print("whether User A can access User B's data (horizontal IDOR).")
-     print()
-     print("Please provide credentials for a SECOND account:")
-     print()
-     print("  Format: username: <username>  password: <password>")
-     print("  Alternative: 'skip' to skip IDOR testing")
-     print()
-     print("Options if you don't have a second account:")
-     print("  1) Use credentials like: username: test2  password: test2pass")
-     print("  2) Self-register a new account first, then provide those credentials")
-     print("  3) Type 'skip' - I'll only test vertical access control then")
-     print()
-     print("Waiting for your input...")
-     print("="*70)
-
-     # STOP - wait for user reply
-     # DO NOT proceed with IDOR tests until user responds
-     # The agent should print the message above and pause
-
-   ─────────────────────────────────────────────────────────────────────────
+   Five IDOR types covered automatically:
 
    Run ALL IDOR tests using the harvested OBJECT_MAP:
 
@@ -92,10 +165,9 @@
     print(f"OBJECT_MAP: {len(OBJECT_MAP)} endpoint patterns, "
           f"{sum(len(v) for v in OBJECT_MAP.values())} total URLs harvested from Session A")
 
-    # IMPORTANT: If no session_b, DO NOT auto-test - wait for user input above
+    # If no session_b, skip horizontal IDOR but ALWAYS test vertical + API IDOR
     if not session_b:
-        # Already printed request for credentials above
-        pass  # Wait for user to input second account credentials
+        print("[INFO] No Session B — skipping horizontal IDOR, testing vertical + API only")
 
     # ── Helper: response_differs ──────────────────────────────────────────────
     def response_differs(body_a_snippet, body_b):
