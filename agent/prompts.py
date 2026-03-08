@@ -204,14 +204,43 @@ After confirming a vulnerability, ALWAYS append it with FULL details:
 
 MANDATORY FIELDS — every finding MUST include ALL of these:
   - severity, title, url, method, param, payload (what you tested)
-  - request   — the FULL HTTP request you sent (method, headers, body)
-  - response  — the ACTUAL server response (copy-paste, truncate to 2000 chars if huge)
+  - request   — the FULL HTTP request you sent (method, URL, headers, body)
+  - response  — the RELEVANT part of the server response that PROVES the bug (see below)
   - poc       — a working curl command with REAL values (no placeholders!)
   - evidence  — explain WHY this confirms the vulnerability
   - impact    — what an attacker can do with this
   - remediation — specific fix
   - affected_endpoints — list ALL paths/endpoints where this vuln was confirmed
     (if SQLi works in /login AND /search AND /comments, list ALL THREE)
+
+RESPONSE FIELD — EXTRACT THE PROOF, NOT THE WHOLE PAGE:
+  Do NOT dump the entire HTML page. Extract ONLY the vulnerability-relevant content.
+  Use BeautifulSoup or string parsing to pull out the actual proof:
+
+  SSRF / Path Traversal:
+    WRONG: store entire HTML wrapper page (nav bar, CSS, template)
+    RIGHT: extract the fetched content — e.g., "root:x:0:0:root:/root:/bin/bash\n..."
+    HOW:   soup = BeautifulSoup(r.text, 'html.parser')
+           # Find the element containing the fetched result, or use r.text between markers
+           # Store: "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:..."
+
+  SQLi:
+    WRONG: store entire login page HTML
+    RIGHT: store the JSON/data that proves bypass — e.g., '{"token":"eyJ...","role":"admin"}'
+    HOW:   r.json() or extract the relevant <div> from the response
+
+  XSS:
+    WRONG: store entire page
+    RIGHT: store the HTML snippet showing unescaped payload
+    HOW:   show 2-3 lines around where payload appears: '...<p><script>alert(1)</script></p>...'
+
+  CMDi:
+    WRONG: store entire page
+    RIGHT: store command output — e.g., "uid=1000(www-data) gid=1000(www-data)"
+
+  GENERAL RULE: response field should be MAX 50 lines showing ONLY the proof.
+  Include response status code and relevant headers too:
+    "HTTP 200 OK\nContent-Type: text/html\n\n[extracted content showing the bug]"
 
 If you DON'T store findings in _G, the HTML report will be EMPTY.
 If you skip request/response/poc, the report will lack proof and look amateur.
