@@ -466,22 +466,48 @@ def _build_detailed_findings(findings) -> str:
         sev = f.get("severity", "INFO").upper()
         title = _esc(f.get("title", "Unknown"))
         url = _esc(f.get("url", "—"))
-        method = _esc(f.get("method", f.get("detail", {}).get("method", "—")))
-        param = _esc(f.get("param", f.get("detail", {}).get("param", f.get("detail", {}).get("field", "—"))))
-        payload = _esc(f.get("payload", f.get("detail", {}).get("payload", "—")))
-        cvss = _esc(str(f.get("cvss", f.get("detail", {}).get("cvss", "—"))))
+        detail = f.get("detail", {}) if isinstance(f.get("detail"), dict) else {}
+        method = _esc(f.get("method", detail.get("method", "—")))
+        param = _esc(f.get("param", detail.get("param", detail.get("field", "—"))))
+        payload = _esc(f.get("payload", detail.get("payload", "—")))
+        cvss = _esc(str(f.get("cvss", detail.get("cvss", "—"))))
         owasp = _esc(_guess_owasp(f.get("title", "")))
-        evidence = f.get("evidence", f.get("detail", {}).get("evidence", ""))
-        poc = f.get("poc", f.get("detail", {}).get("poc", ""))
-        screenshot = _esc(f.get("screenshot", f.get("detail", {}).get("screenshot", "")))
-        impact = _esc(f.get("impact", f.get("detail", {}).get("impact", "")))
-        remediation = f.get("remediation", f.get("detail", {}).get("remediation", ""))
+        evidence = f.get("evidence", detail.get("evidence", ""))
+        poc = f.get("poc", detail.get("poc", ""))
+        request = f.get("request", detail.get("request", ""))
+        response = f.get("response", detail.get("response", ""))
+        screenshot = _esc(f.get("screenshot", detail.get("screenshot", "")))
+        impact = _esc(f.get("impact", detail.get("impact", "")))
+        remediation = f.get("remediation", detail.get("remediation", ""))
+
+        # Affected endpoints — list of all URLs where this vuln was confirmed
+        affected = f.get("affected_endpoints", detail.get("affected_endpoints", []))
+        if isinstance(affected, str):
+            affected = [affected]
 
         evidence_html = f"<pre>{_esc(evidence)}</pre>" if evidence else "<p><em>See test output in conversation log.</em></p>"
         poc_html = f"<pre>{_esc(poc)}</pre>" if poc else ""
+        request_html = f"<h4>Request Sent</h4><pre>{_esc(request)}</pre>" if request else ""
+        response_html = f"<h4>Server Response</h4><pre>{_esc(response[:2000])}</pre>" if response else ""
         screenshot_html = f"<p><strong>Screenshot:</strong> <code>{screenshot}</code></p>" if screenshot else ""
         impact_html = f"<p>{impact}</p>" if impact else ""
         remediation_html = f"<pre>{_esc(remediation)}</pre>" if remediation else "<p><em>See remediation roadmap in Section 7.</em></p>"
+
+        # Build affected endpoints table
+        affected_html = ""
+        if affected:
+            ep_rows = ""
+            for ep in affected:
+                if isinstance(ep, dict):
+                    ep_rows += f"<tr><td><code>{_esc(ep.get('method', 'GET'))}</code></td><td>{_esc(ep.get('url', ''))}</td><td>{_esc(ep.get('param', ''))}</td></tr>\n"
+                else:
+                    ep_rows += f"<tr><td>—</td><td>{_esc(str(ep))}</td><td>—</td></tr>\n"
+            affected_html = f"""
+      <h4>All Affected Endpoints ({len(affected)})</h4>
+      <table>
+        <tr><th style="width:10%">Method</th><th>URL / Path</th><th style="width:20%">Parameter</th></tr>
+        {ep_rows}
+      </table>"""
 
         sections += f"""
     <div class="finding-card {sev}" id="finding-{i}">
@@ -496,9 +522,13 @@ def _build_detailed_findings(findings) -> str:
       </table>
 
       {impact_html}
+      {affected_html}
 
       <h4>Evidence</h4>
       {evidence_html}
+
+      {request_html}
+      {response_html}
 
       {screenshot_html}
 

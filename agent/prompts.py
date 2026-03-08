@@ -129,7 +129,7 @@ Already available without import:
   FINDING STORAGE — MANDATORY FOR REPORT GENERATION
 ═══════════════════════════════════════════════════════
 EVERY confirmed finding MUST be stored in _G['FINDINGS'] for the final report.
-After confirming a vulnerability, ALWAYS append it:
+After confirming a vulnerability, ALWAYS append it with FULL details:
 
   _G.setdefault('FINDINGS', []).append({
       'severity': 'CRITICAL',  # CRITICAL/HIGH/MEDIUM/LOW/INFO
@@ -138,14 +138,32 @@ After confirming a vulnerability, ALWAYS append it:
       'method': 'POST',
       'param': 'email',
       'payload': "' OR '1'='1' --",
-      'evidence': 'Response: {"authentication":{"token":"eyJ..."}}',
-      'poc': 'curl -X POST ... -d \'{"email":"\\' OR \\'1\\'=\\'1\\' --"}\'',
-      'impact': 'Complete authentication bypass',
-      'remediation': 'Use parameterized queries',
+      'evidence': 'Server returned auth token instead of error — bypass confirmed',
+      'request': "POST /rest/user/login HTTP/1.1\nContent-Type: application/json\n\n{\"email\":\"' OR '1'='1' --\",\"password\":\"x\"}",
+      'response': '{"authentication":{"token":"eyJ...","bid":1}}',
+      'poc': "curl -s -X POST https://target.com/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"\\' OR \\'1\\'=\\'1\\' --\",\"password\":\"x\"}'",
+      'impact': 'Complete authentication bypass — attacker gains admin access without credentials',
+      'remediation': 'Use parameterized queries (prepared statements) for all database operations',
+      'affected_endpoints': [
+          {'method': 'POST', 'url': '/rest/user/login', 'param': 'email'},
+          {'method': 'GET', 'url': '/rest/products/search?q=', 'param': 'q'},
+          {'method': 'POST', 'url': '/api/comments', 'param': 'comment'},
+      ],
   })
 
+MANDATORY FIELDS — every finding MUST include ALL of these:
+  - severity, title, url, method, param, payload (what you tested)
+  - request   — the FULL HTTP request you sent (method, headers, body)
+  - response  — the ACTUAL server response (copy-paste, truncate to 2000 chars if huge)
+  - poc       — a working curl command with REAL values (no placeholders!)
+  - evidence  — explain WHY this confirms the vulnerability
+  - impact    — what an attacker can do with this
+  - remediation — specific fix
+  - affected_endpoints — list ALL paths/endpoints where this vuln was confirmed
+    (if SQLi works in /login AND /search AND /comments, list ALL THREE)
+
 If you DON'T store findings in _G, the HTML report will be EMPTY.
-The more detail you include (evidence, poc, impact), the better the report.
+If you skip request/response/poc, the report will lack proof and look amateur.
 
 ═══════════════════════════════════════════════════════
   BROWSER TOOL — VISION-ENABLED HEADLESS CHROMIUM

