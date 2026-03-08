@@ -91,8 +91,16 @@ for sev in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'):
         print(f"  [{sev}] {count}")
 
 html_path = generate_report(_G, output_path='report.html')
-print(f"\n[OK] Professional HTML report saved to: {html_path}")
-print("     Open in browser and print to PDF for client delivery.")
+print(f"\n[OK] HTML report saved to: {html_path}")
+```
+
+STEP 2b — Generate the professional PDF report (MANDATORY — do NOT skip this):
+```python
+from agent.report_pdf import generate_pdf_report
+
+pdf_path = generate_pdf_report(_G, output_path='report.pdf')
+print(f"\n[OK] Professional PDF report saved to: {pdf_path}")
+print("     Ready for client delivery.")
 ```
 
 If _G['FINDINGS'] is empty, you FORGOT to store findings during testing.
@@ -208,7 +216,8 @@ curl -s -X POST https://target.com/rest/user/login \
 
 STEP 4 — Tell the user:
 "Reports saved:
-  - report.html — Professional HTML report (open in browser, print to PDF for client delivery)
+  - report.pdf — Professional PDF report (ready for client delivery)
+  - report.html — HTML version (open in browser)
   - report.md — Markdown version for quick reference
 
 Would you like me to re-test anything, investigate further, or test additional endpoints?"
