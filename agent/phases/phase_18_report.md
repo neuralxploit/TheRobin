@@ -78,9 +78,9 @@ else:
 print("\n" + "=" * 70)
 ```
 
-STEP 2 — Generate the professional HTML report (MANDATORY — do NOT skip this):
+STEP 2 — Generate the professional PDF report (MANDATORY — do NOT skip this):
 ```python
-from agent.report_gen import generate_report
+from agent.report_pdf import generate_pdf_report
 
 # Count findings before generating
 all_f = _G.get('FINDINGS', [])
@@ -89,14 +89,6 @@ for sev in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'):
     count = sum(1 for f in all_f if f.get('severity','').upper() == sev)
     if count:
         print(f"  [{sev}] {count}")
-
-html_path = generate_report(_G, output_path='report.html')
-print(f"\n[OK] HTML report saved to: {html_path}")
-```
-
-STEP 2b — Generate the professional PDF report (MANDATORY — do NOT skip this):
-```python
-from agent.report_pdf import generate_pdf_report
 
 pdf_path = generate_pdf_report(_G, output_path='report.pdf')
 print(f"\n[OK] Professional PDF report saved to: {pdf_path}")
@@ -217,7 +209,6 @@ curl -s -X POST https://target.com/rest/user/login \
 STEP 4 — Tell the user:
 "Reports saved:
   - report.pdf — Professional PDF report (ready for client delivery)
-  - report.html — HTML version (open in browser)
   - report.md — Markdown version for quick reference
 
 Would you like me to re-test anything, investigate further, or test additional endpoints?"
