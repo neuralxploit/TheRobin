@@ -12,19 +12,59 @@
 
   jwt_findings = []
 
-  # ── Collect all JWTs from cookies, headers, and response bodies ─────────
+  # ── Collect all JWTs from cookies, headers, stored tokens, and localStorage ──
   jwts = {}
-  # Check cookies
+
+  def _is_jwt(val):
+      """Check if a string looks like a JWT (3 base64url parts, header starts with ey)."""
+      if not isinstance(val, str):
+          return False
+      return val.count('.') == 2 and val.split('.')[0].startswith('ey')
+
+  # 1. Check cookies
   for name, val in session.cookies.items():
-      if val.count('.') == 2 and val.startswith('ey'):
-          jwts[name] = val
-  # Check Authorization header in recent responses
+      if _is_jwt(val):
+          jwts[f'cookie:{name}'] = val
+
+  # 2. Check Authorization header on session
+  auth_hdr = session.headers.get('Authorization', '')
+  if auth_hdr.startswith('Bearer ') and _is_jwt(auth_hdr.split(' ', 1)[1]):
+      jwts['Authorization'] = auth_hdr.split(' ', 1)[1]
+
+  # 3. Check _G for stored tokens (Phase 3 stores as auth_token)
+  for gkey in ('auth_token', 'jwt_token', 'token', 'access_token', 'id_token'):
+      gval = _G.get(gkey, '')
+      if _is_jwt(str(gval)):
+          jwts[f'_G[{gkey}]'] = str(gval)
+
+  # 4. Check AUTH_HEADER legacy key
   auth_header = _G.get('AUTH_HEADER', '')
-  if auth_header.startswith('Bearer ey') and auth_header.split(' ')[1].count('.') == 2:
-      jwts['Authorization'] = auth_header.split(' ')[1]
+  if auth_header.startswith('Bearer ') and _is_jwt(auth_header.split(' ', 1)[1]):
+      jwts['AUTH_HEADER'] = auth_header.split(' ', 1)[1]
+
+  # 5. Check JWT_TOKENS stored by Phase 4 (session management)
+  for jname, jval in _G.get('JWT_TOKENS', {}).items():
+      if _is_jwt(jval) and jval not in jwts.values():
+          jwts[f'phase4:{jname}'] = jval
+
+  # 6. Try fetching a fresh token from login endpoint (if we know it)
+  if not jwts and _G.get('api_login_url') and _G.get('api_login_fields'):
+      try:
+          _lr = session.post(_G['api_login_url'], json=_G['api_login_fields'], timeout=10)
+          _ld = _lr.json() if _lr.status_code in (200, 201) else {}
+          for _k, _v in (list(_ld.items()) if isinstance(_ld, dict) else []):
+              if _is_jwt(str(_v)):
+                  jwts[f'login_resp:{_k}'] = str(_v)
+              elif isinstance(_v, dict):
+                  for _k2, _v2 in _v.items():
+                      if _is_jwt(str(_v2)):
+                          jwts[f'login_resp:{_k}.{_k2}'] = str(_v2)
+      except Exception:
+          pass
 
   if not jwts:
-      print("[INFO] No JWT tokens found — skipping deep JWT testing")
+      print("[INFO] No JWT tokens found anywhere — skipping deep JWT testing")
+      print("  Checked: cookies, Authorization header, _G[auth_token], login response")
   else:
       print(f"[JWT] Found {len(jwts)} JWT token(s): {list(jwts.keys())}")
 

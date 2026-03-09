@@ -130,6 +130,63 @@
                   except Exception:
                       continue
 
+  # ── PART B2 — REST API coupon/basket/order manipulation ──────────────────
+  # Many SPAs use JSON APIs for cart/basket/coupon — test these directly
+  BASKET_API_PATHS = ['/api/BasketItems', '/api/basket', '/api/cart', '/api/orders',
+                      '/rest/basket', '/api/v1/cart', '/api/v1/orders', '/api/quantitys']
+  COUPON_API_PATHS = ['/api/Coupons', '/rest/basket/coupon', '/api/coupon',
+                      '/api/discount', '/api/promo', '/api/v1/coupon']
+
+  print(f"\n[LOGIC] Testing REST API basket/coupon manipulation")
+
+  # Test negative quantities via JSON API
+  for bpath in BASKET_API_PATHS:
+      burl = BASE.rstrip('/') + bpath
+      for neg_qty in [-1, -100, 0, 0.001]:
+          time.sleep(0.3)
+          try:
+              r = session.post(burl, json={'ProductId': 1, 'BasketId': '1', 'quantity': neg_qty},
+                               timeout=10, headers={'Content-Type': 'application/json'})
+              if r.status_code in (200, 201):
+                  try:
+                      data = r.json()
+                      if isinstance(data, dict) and data.get('id'):
+                          print(f"  [HIGH] Negative/zero quantity accepted: {burl} qty={neg_qty}")
+                          print(f"    Response: {str(data)[:200]}")
+                          logic_findings.append({
+                              'url': burl, 'type': 'negative-quantity',
+                              'desc': f'Quantity {neg_qty} accepted via API',
+                              'evidence': str(data)[:300],
+                          })
+                          break
+                  except Exception:
+                      pass
+          except Exception:
+              continue
+
+  # Test coupon code via JSON API
+  for cpath in COUPON_API_PATHS:
+      curl = BASE.rstrip('/') + cpath
+      for coupon in ['', 'AAAA', 'null', 'undefined', '-1', '0']:
+          time.sleep(0.3)
+          try:
+              r = session.put(curl, json={'coupon': coupon}, timeout=10,
+                              headers={'Content-Type': 'application/json'})
+              if r.status_code == 200:
+                  try:
+                      data = r.json()
+                      if 'discount' in str(data).lower() or 'applied' in str(data).lower():
+                          print(f"  [HIGH] Invalid coupon accepted: {curl} code='{coupon}'")
+                          logic_findings.append({
+                              'url': curl, 'type': 'coupon-bypass',
+                              'desc': f"Coupon '{coupon}' accepted",
+                              'evidence': str(data)[:300],
+                          })
+                  except Exception:
+                      pass
+          except Exception:
+              continue
+
   # ══════════════════════════════════════════════════════════════
   # PART C — Workflow / Step Bypass
   # ══════════════════════════════════════════════════════════════

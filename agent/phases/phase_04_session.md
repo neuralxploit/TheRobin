@@ -9,6 +9,55 @@
    - Test session fixation: set cookie before login, check if it changes after
    - Analyze session token entropy (length, randomness)
 
+  **MANDATORY — JWT Detection (for Phase 9b Deep JWT Testing):**
+  ```python
+  # Detect JWT tokens EVERYWHERE and store them so Phase 9b can find them
+  import base64 as _b64, json as _json
+  _jwt_found = []
+
+  def _looks_jwt(v):
+      return isinstance(v, str) and v.count('.') == 2 and v.split('.')[0].startswith('ey')
+
+  _sess = _G.get('session_a') or _G.get('session')
+
+  # Check cookies
+  if _sess:
+      for _cn, _cv in _sess.cookies.items():
+          if _looks_jwt(_cv):
+              _jwt_found.append(('cookie', _cn, _cv))
+
+  # Check Authorization header on session
+  if _sess and _looks_jwt(_sess.headers.get('Authorization','').replace('Bearer ','')):
+      _jwt_found.append(('header', 'Authorization', _sess.headers['Authorization'].replace('Bearer ','')))
+
+  # Check _G stored tokens
+  for _gk in ('auth_token', 'token', 'jwt_token', 'access_token'):
+      _gv = _G.get(_gk, '')
+      if _looks_jwt(str(_gv)):
+          _jwt_found.append(('_G', _gk, str(_gv)))
+
+  if _jwt_found:
+      print(f"[SESSION] Found {len(_jwt_found)} JWT token(s):")
+      for _src, _name, _tok in _jwt_found:
+          # Decode and analyze header + payload
+          try:
+              _hdr = _json.loads(_b64.urlsafe_b64decode(_tok.split('.')[0] + '=='))
+              _pay = _json.loads(_b64.urlsafe_b64decode(_tok.split('.')[1] + '=='))
+              print(f"  {_src}:{_name} — alg={_hdr.get('alg')} typ={_hdr.get('typ')}")
+              print(f"    Claims: {list(_pay.keys())}")
+              if 'exp' not in _pay:
+                  print(f"  [MEDIUM] JWT has NO expiration (exp claim missing)")
+              if _hdr.get('alg','').lower() == 'none':
+                  print(f"  [CRITICAL] JWT uses 'none' algorithm!")
+          except Exception:
+              print(f"  {_src}:{_name} — (decode failed)")
+      # Store JWT info for Phase 9b to pick up
+      _G['JWT_TOKENS'] = {f'{s}:{n}': t for s, n, t in _jwt_found}
+      print(f"  Stored {len(_jwt_found)} JWT(s) in _G['JWT_TOKENS'] for Phase 9b deep testing")
+  else:
+      print("[SESSION] No JWT tokens detected in cookies, headers, or stored tokens")
+  ```
+
   **Cookie Value Injection — XSS and SQLi via cookie fields:**
   ```python
   import re as _re

