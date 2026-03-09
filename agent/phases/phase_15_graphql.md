@@ -300,10 +300,123 @@ for query_tpl in injection_queries:
 ```
 
 ```python
-# ── Phase 15 Summary ──────────────────────────────────────────────────────────
+# ── Phase 15 — Store all GraphQL findings in _G['FINDINGS'] ─────────────────
+# This block MUST run after all GraphQL tests above.
+# It re-checks the same conditions and stores confirmed findings.
+
+_G.setdefault('FINDINGS', [])
+_gql_count = 0
+
+if GRAPHQL_URL:
+    # Step 1 result: Introspection enabled
+    try:
+        _r = session.post(GRAPHQL_URL, json={"query": INTROSPECTION_QUERY}, timeout=20)
+        _d = _r.json() if _r.status_code == 200 else {}
+        if 'data' in _d and _d['data'] and '__schema' in _d['data']:
+            _G['FINDINGS'].append({
+                'severity': 'HIGH',
+                'title': 'GraphQL Introspection Enabled — Full Schema Exposed',
+                'url': GRAPHQL_URL,
+                'method': 'POST',
+                'parameter': 'query',
+                'payload': '{__schema{queryType{name}types{name fields{name}}}}',
+                'evidence': f"Server returned full schema with {len([t for t in _d['data']['__schema'].get('types',[]) if not t['name'].startswith('__')])} custom types",
+                'impact': 'Attacker can map entire API surface, discover hidden queries/mutations, and plan targeted attacks',
+            })
+            _gql_count += 1
+    except Exception:
+        pass
+
+    # Step 2 result: Field suggestions
+    if suggestions_found:
+        _G['FINDINGS'].append({
+            'severity': 'MEDIUM',
+            'title': f"GraphQL Field Suggestions Leak — {len(suggestions_found)} field names disclosed",
+            'url': GRAPHQL_URL,
+            'method': 'POST',
+            'parameter': 'query',
+            'payload': '{ user { emai } }',
+            'evidence': f"Server returned field name suggestions: {suggestions_found[:10]}",
+            'impact': 'Bypasses introspection-disabled controls; attacker can enumerate schema fields one at a time',
+        })
+        _gql_count += 1
+
+    # Step 3 result: Unauthenticated query access
+    for label, query in sensitive_queries:
+        try:
+            _r = unauth_session.post(GRAPHQL_URL, json={"query": query}, timeout=8)
+            _d = _r.json() if _r.status_code == 200 else {}
+            if 'data' in _d and _d['data'] and any(v for v in _d['data'].values() if v):
+                _G['FINDINGS'].append({
+                    'severity': 'CRITICAL',
+                    'title': f"GraphQL Unauthenticated Access — {label}",
+                    'url': GRAPHQL_URL,
+                    'method': 'POST',
+                    'parameter': 'query',
+                    'payload': query,
+                    'evidence': f"Data returned without auth: {str(_d['data'])[:200]}",
+                    'impact': 'Sensitive data accessible without authentication; complete auth bypass on GraphQL API',
+                })
+                _gql_count += 1
+        except Exception:
+            pass
+
+    # Step 5 result: Unauthenticated mutations
+    for label, mutation in mutations:
+        try:
+            _r = unauth_session.post(GRAPHQL_URL, json={"query": mutation}, timeout=8)
+            _d = _r.json() if _r.status_code == 200 else {}
+            if 'data' in _d and _d['data'] and any(v for v in _d['data'].values() if v):
+                _G['FINDINGS'].append({
+                    'severity': 'CRITICAL',
+                    'title': f"GraphQL Unauthenticated Mutation — {label}",
+                    'url': GRAPHQL_URL,
+                    'method': 'POST',
+                    'parameter': 'query',
+                    'payload': mutation[:200],
+                    'evidence': f"Mutation succeeded without auth: {str(_d['data'])[:200]}",
+                    'impact': 'Attacker can create/modify/delete data without authentication',
+                })
+                _gql_count += 1
+        except Exception:
+            pass
+
+    # Step 6 result: Alias batching (rate limit bypass)
+    try:
+        _r = session.post(GRAPHQL_URL, json={"query": batch_query}, timeout=15)
+        if _r.status_code == 200:
+            _d = _r.json()
+            if 'data' in _d:
+                _successful = [k for k, v in (_d['data'] or {}).items() if v and v.get('token')]
+                if _successful:
+                    _G['FINDINGS'].append({
+                        'severity': 'CRITICAL',
+                        'title': f"GraphQL Alias Batching — {len(_successful)}/10 logins returned tokens",
+                        'url': GRAPHQL_URL,
+                        'method': 'POST',
+                        'payload': batch_query[:200],
+                        'evidence': f"{len(_successful)} login aliases returned tokens in single request",
+                        'impact': 'Complete rate limit bypass; brute-force attacks via batched GraphQL aliases',
+                    })
+                    _gql_count += 1
+                elif 'errors' not in _d or not any('batch' in str(e).lower() or 'alias' in str(e).lower() for e in _d.get('errors',[])):
+                    _G['FINDINGS'].append({
+                        'severity': 'HIGH',
+                        'title': 'GraphQL Alias Batching — Rate Limit Bypass',
+                        'url': GRAPHQL_URL,
+                        'method': 'POST',
+                        'payload': batch_query[:200],
+                        'evidence': 'Server accepted 10 login attempts in single request without HTTP 429',
+                        'impact': 'Brute-force rate limiting can be bypassed via GraphQL alias batching',
+                    })
+                    _gql_count += 1
+    except Exception:
+        pass
+
 print("=" * 60)
-print("PHASE 10 COMPLETE — GraphQL Testing")
+print("PHASE 15 COMPLETE — GraphQL Testing")
 print("Tested: introspection, field suggestions, unauth access,")
 print("        IDOR, mutations, alias batching, injection")
+print(f"Stored {_gql_count} GraphQL findings in _G['FINDINGS']")
 print("=" * 60)
 ```
