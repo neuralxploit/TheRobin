@@ -913,19 +913,22 @@
                continue
 
        # Probe additional REST API paths with auth
+       # Generic REST API paths to probe with auth (works on any app)
        AUTH_API_PATHS = [
-           '/rest/user/whoami', '/rest/user/change-password',
-           '/rest/basket/{bid}', '/rest/order-history',
-           '/rest/wallet/balance', '/rest/deluxe-membership',
-           '/rest/memories', '/rest/saveLoginIp',
-           '/rest/2fa/status', '/rest/chatbot/respond',
-           '/api/Users', '/api/Users/1', '/api/Users/2', '/api/Users/3',
-           '/api/Cards', '/api/Addresss', '/api/Deliverys',
-           '/api/Complaints', '/api/Recycles',
-           '/api/SecurityAnswers', '/api/PrivacyRequests',
-           '/profile', '/accounting', '/administration',
-           '/b2b/v2/orders', '/support/logs',
-           '/api/Quantitys', '/api/BasketItems',
+           '/api/me', '/api/user', '/api/users', '/api/users/1', '/api/users/2',
+           '/api/profile', '/api/account', '/api/whoami',
+           '/api/orders', '/api/products', '/api/items', '/api/data',
+           '/api/settings', '/api/config', '/api/preferences',
+           '/api/admin', '/api/admin/users', '/api/admin/settings',
+           '/api/files', '/api/uploads', '/api/export', '/api/import',
+           '/api/feedback', '/api/comments', '/api/reviews', '/api/messages',
+           '/api/keys', '/api/tokens', '/api/sessions',
+           '/api/logs', '/api/audit', '/api/events',
+           '/api/v1/users', '/api/v1/me', '/api/v1/admin',
+           '/rest/user/whoami', '/rest/users', '/rest/products',
+           '/rest/admin', '/rest/orders',
+           '/profile', '/dashboard', '/admin', '/settings',
+           '/account', '/administration',
        ]
        for path in AUTH_API_PATHS:
            url = BASE + path

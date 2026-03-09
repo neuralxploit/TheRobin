@@ -266,22 +266,30 @@
       except Exception:
           pass
 
-  # Also try common SPA API paths not found in JS
+  # Also try common REST API paths not found in JS (generic — works on any app)
   SPA_COMMON_PATHS = [
-      '/rest/user/login', '/rest/user/whoami', '/rest/user/change-password',
-      '/rest/products/search', '/rest/basket/', '/rest/saveLoginIp',
-      '/rest/deluxe-membership', '/rest/memories', '/rest/order-history',
-      '/rest/wallet/balance', '/rest/track-order',
-      '/api/Users', '/api/Products', '/api/Feedbacks', '/api/Complaints',
-      '/api/Recycles', '/api/Challenges', '/api/SecurityQuestions',
-      '/api/SecurityAnswers', '/api/Cards', '/api/Deliverys', '/api/Addresss',
-      '/api/Quantitys', '/api/BasketItems', '/api/PrivacyRequests',
-      '/api/Wallets',
-      '/b2b/v2/orders',
-      '/profile', '/profile/image/upload', '/support/logs',
-      '/file-upload', '/redirect',
-      '/snippets', '/snippets/', '/chatbot', '/chatbot/status',
-      '/metrics', '/promotion', '/video',
+      # Auth / user endpoints
+      '/rest/user/login', '/rest/user/whoami',
+      '/api/login', '/api/auth', '/api/me', '/api/profile', '/api/whoami',
+      '/api/user', '/api/users', '/api/account', '/api/session',
+      '/api/v1/login', '/api/v1/users', '/api/v1/me',
+      # Data endpoints
+      '/api/products', '/api/orders', '/api/items', '/api/data',
+      '/api/search', '/api/config', '/api/settings', '/api/status',
+      '/api/files', '/api/uploads', '/api/export', '/api/import',
+      '/api/feedback', '/api/comments', '/api/reviews', '/api/messages',
+      # Admin / system
+      '/api/admin', '/api/admin/users', '/api/admin/config',
+      '/api/logs', '/api/debug', '/api/health', '/api/metrics',
+      '/api/keys', '/api/tokens', '/api/roles', '/api/permissions',
+      # REST variants
+      '/rest/products', '/rest/users', '/rest/admin',
+      '/rest/search', '/rest/orders',
+      # Common app paths
+      '/profile', '/dashboard', '/admin', '/settings',
+      '/upload', '/file-upload', '/support', '/contact',
+      '/search', '/register', '/signup', '/forgot-password',
+      '/graphql', '/graphiql',
   ]
   for path in SPA_COMMON_PATHS:
       url = BASE + path
