@@ -20,6 +20,23 @@ Vulnerabilities included:
   A09 Logging Failures         — Failed logins not logged, no audit trail
   A10 SSRF                     — /fetch endpoint fetches arbitrary internal/external URLs
 
+  JavaScript Vulnerabilities (static/js/app.js):
+    - DOM-based XSS via location.hash, URL params (msg, page), document.referrer
+    - Hardcoded API keys, AWS credentials, admin password, debug tokens in JS
+    - Sensitive data (JWT, PII, API keys) stored in localStorage
+    - postMessage handler with NO origin validation (accepts any origin)
+    - eval() injection in calculator feature
+    - Client-side access control bypass (admin panel hidden by JS, not server)
+    - Open redirect via URL parameter (/redirect?url=https://evil.com)
+    - Prototype pollution via jQuery $.extend with user-controlled JSON
+    - JSONP callback injection (/api/data/export?callback=alert(1))
+    - Source map exposure (/static/js/app.js.map reveals source + secrets)
+    - Insecure WebSocket (ws:// not wss://, no auth, innerHTML from messages)
+    - API config endpoint leaks secrets (/api/config)
+    - Webhook registration SSRF (/api/webhooks)
+    - JWT "none" algorithm bypass in client-side token verification
+    - Debug/backdoor functions exposed globally (debugDump, enableDevMode)
+
 Default credentials:
   admin   / admin123   (role: admin)
   alice   / password1  (role: user)
@@ -32,7 +49,7 @@ Run:  python3 app.py
 from flask import (Flask, request, render_template_string, redirect,
                    url_for, session, make_response, jsonify, g)
 import sqlite3, hashlib, os, subprocess, urllib.request, urllib.error
-import pickle, base64, time, re
+import pickle, base64, time, re, json
 
 # ── App config ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -168,7 +185,12 @@ BASE = """<!DOCTYPE html>
     .vuln-badge { font-size:10px; color:#999; margin-left:6px; }
     .severity-critical { color:#d9534f; font-weight:bold; }
     .sidebar { background:#fff; border:1px solid #ddd; border-radius:4px; padding:15px; }
+    .admin-only { display:none; }
+    .ws-msg { padding:4px 8px; border-bottom:1px solid #eee; }
+    .highlight { background:#ff0; padding:1px 2px; }
   </style>
+  <!-- JS vulnerabilities: hardcoded secrets, DOM XSS, postMessage, eval, prototype pollution -->
+  <script src="/static/js/app.js"></script>
 </head>
 <body>
 <nav class="navbar navbar-inverse navbar-fixed-top">
@@ -184,10 +206,17 @@ BASE = """<!DOCTYPE html>
         <li><a href="/admin/reports">Reports</a></li>
         <li><a href="/tools">Tools</a></li>
         <li><a href="/fetch">URL Fetch</a></li>
+        <li><a href="/calculator">Calculator</a></li>
+        <li><a href="/settings">Settings</a></li>
+        <li><a href="/messages">Messages</a></li>
       </ul>
       <ul class="nav navbar-nav navbar-right">
         {% if session.username %}
-        <li><a href="/profile/{{ session.user_id }}">{{ session.username }}</a></li>
+        <li><a href="/profile/{{ session.user_id }}"
+               data-user-id="{{ session.user_id }}"
+               data-username="{{ session.username }}"
+               data-email="{{ session.get('email','') }}"
+               data-role="{{ session.get('role','user') }}">{{ session.username }}</a></li>
         <li><a href="/logout">Logout</a></li>
         {% else %}
         <li><a href="/login">Login</a></li>
@@ -197,6 +226,11 @@ BASE = """<!DOCTYPE html>
   </div>
 </nav>
 <div class="container">
+  <div id="notification-area"></div>
+  <div id="hash-content"></div>
+  <div id="referrer-banner" class="text-muted small"></div>
+  <div id="dynamic-content"></div>
+  <div id="spa-content"></div>
   {% if flash %}<div class="alert alert-{{ flash.type }}">{{ flash.msg }}</div>{% endif %}
   {% block content %}{% endblock %}
 </div>
@@ -1244,6 +1278,367 @@ def api_users():
     # A01: No auth, returns all users
     rows = get_db().execute("SELECT * FROM users").fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# JavaScript Vulnerability Routes
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── JS: Calculator — eval() injection via JavaScript ──────────────────────────
+@app.route('/calculator')
+def calculator():
+    redir = require_login()
+    if redir: return redir
+    return render("""
+    <h2>Expense Calculator <span class="vuln-badge">[JS: eval() injection]</span></h2>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">Quick Calculator</div>
+          <div class="panel-body">
+            <p class="text-muted">Calculate expenses, budgets, and totals.</p>
+            <div class="form-group">
+              <label>Expression</label>
+              <input class="form-control" id="calc-input" placeholder="e.g. 1500 + 2300 * 0.15">
+              <small class="text-muted">Enter a math expression to calculate.</small>
+            </div>
+            <button class="btn btn-primary" onclick="
+              var expr = document.getElementById('calc-input').value;
+              var result = calculate(expr);
+              document.getElementById('calc-result').innerHTML =
+                '<div class=&quot;alert alert-success&quot;><b>Result:</b> ' + result + '</div>';
+            ">Calculate</button>
+            <div id="calc-result" style="margin-top:15px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="panel panel-info">
+          <div class="panel-heading">Budget Templates</div>
+          <div class="panel-body">
+            <p>Common calculations:</p>
+            <ul>
+              <li><a href="#" onclick="document.getElementById('calc-input').value='(85000 + 12000) * 0.30'; return false;">Tax estimate (30%)</a></li>
+              <li><a href="#" onclick="document.getElementById('calc-input').value='4500 * 12 + 2000'; return false;">Annual + bonus</a></li>
+              <li><a href="#" onclick="document.getElementById('calc-input').value='(150000 - 45000) / 12'; return false;">Monthly net</a></li>
+            </ul>
+            <hr>
+            <div class="alert alert-warning">
+              <small><b>Vulnerability:</b> The calculator uses <code>eval()</code> on user input.
+              Try: <code>alert(document.cookie)</code> or
+              <code>fetch('/api/users').then(r=>r.text()).then(d=>document.getElementById('calc-result').innerHTML=d)</code></small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """)
+
+
+# ── JS: Settings — Prototype pollution + client-side access control ───────────
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    redir = require_login()
+    if redir: return redir
+    # Server side: handle JSON settings import
+    result = ''
+    if request.method == 'POST' and request.form.get('import_json'):
+        import_data = request.form.get('import_json', '')
+        try:
+            parsed = json.loads(import_data)
+            result = f"Imported {len(parsed)} settings keys: {list(parsed.keys())[:10]}"
+        except Exception as e:
+            result = f"Error: {e}"
+
+    return render("""
+    <h2>User Settings
+      <span class="vuln-badge">[JS: Prototype Pollution + Client-Side Auth Bypass]</span>
+    </h2>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">Preferences (JSON Import)</div>
+          <div class="panel-body">
+            <p class="text-muted">Import your settings as JSON. Merged with app defaults.</p>
+            <div class="form-group">
+              <label>Settings JSON</label>
+              <textarea class="form-control" id="user-settings-json" rows="5"
+                placeholder='{"theme": "dark", "language": "en"}'>{}</textarea>
+              <small class="text-muted">
+                Try: <code>{"__proto__": {"isAdmin": true, "polluted": "yes"}}</code>
+              </small>
+            </div>
+            <button class="btn btn-warning" onclick="saveSettings()">Apply Settings</button>
+            <div id="settings-result" style="margin-top:15px"></div>
+            {% if result %}<div class="alert alert-info" style="margin-top:10px">{{ result }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="panel panel-default">
+          <div class="panel-heading">Theme Preview</div>
+          <div class="panel-body">
+            <form method="POST">
+              <div class="form-group">
+                <label>Import Configuration (Server-side)</label>
+                <textarea class="form-control" name="import_json" rows="3"
+                  placeholder='{"theme":"dark"}'></textarea>
+              </div>
+              <button class="btn btn-default">Import</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="panel panel-danger admin-only" id="admin-tools-panel">
+          <div class="panel-heading">Admin Tools (Client-Side Access Control)</div>
+          <div class="panel-body">
+            <p><b>This panel is hidden by JavaScript for non-admin users.</b></p>
+            <p>But the HTML is still in the DOM — view source or use DevTools.</p>
+            <ul>
+              <li><a href="/admin/config">System Configuration</a></li>
+              <li><a href="/api/users">Export All Users (JSON)</a></li>
+              <li><a href="/admin/reports">Financial Reports</a></li>
+            </ul>
+            <hr>
+            <p class="text-muted"><small>Bypass: Open console, type:
+            <code>enableDevMode()</code> or
+            <code>sessionStorage.setItem('admin_flag','true'); checkAccess();</code></small></p>
+          </div>
+        </div>
+        <div class="panel panel-info">
+          <div class="panel-heading">localStorage Data</div>
+          <div class="panel-body">
+            <p class="text-muted">Your browser stores sensitive data in localStorage:</p>
+            <pre id="local-storage-dump" style="max-height:200px; overflow:auto; font-size:11px"></pre>
+            <button class="btn btn-xs btn-default" onclick="
+              var dump = {};
+              for(var i=0; i<localStorage.length; i++){
+                var k = localStorage.key(i);
+                dump[k] = localStorage.getItem(k);
+              }
+              document.getElementById('local-storage-dump').textContent = JSON.stringify(dump, null, 2);
+            ">Show localStorage</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>checkAccess();</script>
+    """, result=result)
+
+
+# ── JS: Messages — postMessage + DOM XSS via messages ─────────────────────────
+@app.route('/messages')
+def messages():
+    redir = require_login()
+    if redir: return redir
+    return render("""
+    <h2>Internal Messages
+      <span class="vuln-badge">[JS: postMessage no origin check + DOM XSS]</span>
+    </h2>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">Send Message</div>
+          <div class="panel-body">
+            <div class="form-group">
+              <label>To</label>
+              <input class="form-control" id="msg-to" placeholder="username">
+            </div>
+            <div class="form-group">
+              <label>Message (HTML allowed)</label>
+              <textarea class="form-control" id="msg-body" rows="3"
+                placeholder="Type your message..."></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="
+              var body = document.getElementById('msg-body').value;
+              window.postMessage(JSON.stringify({action:'renderHTML', html: body}), '*');
+            ">Send via postMessage</button>
+          </div>
+        </div>
+        <div class="panel panel-warning">
+          <div class="panel-heading">Cross-Origin Message Test</div>
+          <div class="panel-body">
+            <p class="text-muted">This page accepts postMessage from <b>any origin</b>.</p>
+            <p>Supported actions:</p>
+            <ul>
+              <li><code>renderHTML</code> — injects HTML into page</li>
+              <li><code>navigate</code> — redirects user</li>
+              <li><code>getToken</code> — returns auth token to sender</li>
+              <li><code>updateProfile</code> — modifies user profile</li>
+              <li><code>executeAction</code> — runs arbitrary JavaScript</li>
+            </ul>
+            <hr>
+            <p><small><b>PoC:</b> Open console on another tab:
+            <code>window.open('http://127.0.0.1:5001/messages').postMessage(
+              '{"action":"getToken"}','*')</code></small></p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">Inbox</div>
+          <div class="panel-body" id="message-inbox">
+            <div class="text-muted">No messages yet. Messages rendered via postMessage will appear here.</div>
+          </div>
+        </div>
+        <div class="panel panel-default">
+          <div class="panel-heading">WebSocket Notifications</div>
+          <div class="panel-body">
+            <div id="ws-messages">
+              <p class="text-muted">Real-time notifications (WebSocket — no auth required)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- postMessage renders into dynamic-content div in base template -->
+    """)
+
+
+# ── JS: Open redirect via JavaScript ─────────────────────────────────────────
+@app.route('/redirect')
+def js_redirect():
+    url = request.args.get('url', '') or request.args.get('next', '') or request.args.get('return', '')
+    return render("""
+    <h2>Redirecting... <span class="vuln-badge">[JS: Open Redirect]</span></h2>
+    <p>You are being redirected to: <code id="redir-target">{{ url }}</code></p>
+    <p><a href="{{ url }}">Click here if not redirected automatically.</a></p>
+    <script>
+      var target = '{{ url }}';
+      if (target) {
+        // VULN: No validation — open redirect to any URL
+        setTimeout(function(){ window.location.href = target; }, 2000);
+      }
+    </script>
+    """, url=url)
+
+
+# ── JS: JSONP endpoint — callback injection ──────────────────────────────────
+@app.route('/api/data/export')
+def api_data_export():
+    callback = request.args.get('callback', '')
+    db = get_db()
+    users = db.execute("SELECT id,username,email,department FROM users").fetchall()
+    data = json.dumps([dict(u) for u in users])
+
+    if callback:
+        # VULN: JSONP callback injection — user controls function name
+        # Payload: ?callback=alert(document.cookie)//
+        response = app.response_class(
+            response=f'{callback}({data})',
+            status=200,
+            mimetype='application/javascript'
+        )
+        return response
+    return jsonify([dict(u) for u in users])
+
+
+# ── JS: Source map exposure — reveals original source code ────────────────────
+@app.route('/static/js/app.js.map')
+def source_map():
+    # VULN: Source map file exposed — reveals full original source code
+    # Real-world: Many SPAs ship .map files that expose unminified source
+    import json as _json
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'static', 'js', 'app.js'), 'r') as f:
+            source = f.read()
+    except Exception:
+        source = '// source not available'
+    return jsonify({
+        "version": 3,
+        "file": "app.js",
+        "sourceRoot": "",
+        "sources": ["../src/app.ts", "../src/config.ts", "../src/auth.ts"],
+        "sourcesContent": [source, "// config.ts\nexport const API_KEY = 'FAKE_stripe_key_for_testing_do_not_use_1234567890';\nexport const DB_PASS = 'corp_db_2024!';\n", "// auth.ts\nconst ADMIN_HASH = '0192023a7bbd73250516f069df18b500';"],
+        "names": [],
+        "mappings": "AAAA,OAAO"
+    })
+
+
+# ── JS: API config endpoint — secrets in API response ─────────────────────────
+@app.route('/api/config')
+def api_config():
+    # VULN: API endpoint leaks configuration including secrets
+    return jsonify({
+        "app_name": "CorpPortal",
+        "version": "2.1.3",
+        "environment": "production",
+        "debug": True,
+        "database": {
+            "host": "localhost",
+            "name": "corp.db",
+            "user": "app_user",
+            "password": "Db@ccess2024!",
+        },
+        "jwt_secret": "weakkey123",
+        "api_keys": {
+            "stripe": "FAKE_stripe_key_for_testing_do_not_use_1234567890",
+            "sendgrid": "SG.xxxxxxxxxxxxxxxxxxxx.yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+            "aws_access_key": "AKIAIOSFODNN7EXAMPLE",
+        },
+        "smtp": {
+            "host": "smtp.corp.local",
+            "user": "noreply@corp.local",
+            "password": "MailPass2024!",
+        },
+        "internal_services": {
+            "cache": "redis://10.0.0.3:6379",
+            "queue": "amqp://admin:admin@10.0.0.4:5672",
+            "search": "http://10.0.0.5:9200",
+        },
+        "cors_origins": ["*"],
+        "rate_limiting": False,
+    })
+
+
+# ── JS: User preferences — stored XSS via AJAX ──────────────────────────────
+@app.route('/api/preferences', methods=['GET', 'POST'])
+def api_preferences():
+    if request.method == 'POST':
+        # Store preferences as-is — no sanitization
+        data = request.get_json(force=True, silent=True) or {}
+        prefs = json.dumps(data)
+        if logged_in():
+            db = get_db()
+            db.execute("UPDATE users SET notes=? WHERE id=?",
+                       (prefs, session['user_id']))
+            db.commit()
+        return jsonify({"status": "saved", "preferences": data})
+
+    if logged_in():
+        row = get_db().execute("SELECT notes FROM users WHERE id=?",
+                               (session['user_id'],)).fetchone()
+        try:
+            prefs = json.loads(row['notes']) if row and row['notes'] else {}
+        except Exception:
+            prefs = {}
+        return jsonify(prefs)
+    return jsonify({})
+
+
+# ── JS: Webhook registration — SSRF + no auth ────────────────────────────────
+@app.route('/api/webhooks', methods=['GET', 'POST'])
+def api_webhooks():
+    # VULN: Register webhook URLs — server will call them (SSRF)
+    # VULN: No authentication required
+    if request.method == 'POST':
+        data = request.get_json(force=True, silent=True) or {}
+        url = data.get('url', '')
+        if url:
+            try:
+                # VULN: Server fetches user-supplied URL — SSRF
+                req = urllib.request.Request(url, headers={
+                    'User-Agent': 'CorpPortal-Webhook/1.0',
+                    'X-Webhook-Secret': app.secret_key,
+                })
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    status = resp.status
+                return jsonify({"status": "registered", "url": url, "test_status": status})
+            except Exception as e:
+                return jsonify({"status": "error", "url": url, "error": str(e)})
+    return jsonify({
+        "webhooks": [],
+        "note": "POST with {\"url\": \"http://...\"} to register a webhook",
+    })
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────
