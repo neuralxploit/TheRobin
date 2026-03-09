@@ -17,10 +17,10 @@ from ui.console import PentestConsole
 
 # Models known to support tool calling well with Ollama
 PREFERRED_MODELS = [
+    "glm-4.7",
     "glm-5",
     "kimi-k2.5",
     "kimi-k2",
-    "glm-4.7",
     "glm-4",
     "deepseek",
     "qwen",
@@ -242,7 +242,7 @@ class App:
                 self.ui.print_system("  set MODE     webapp | osint | full")
                 self.ui.print_system("  set TOR      on | off  (route HTTP through Tor localhost:9050)")
                 self.ui.print_system("  set HEADERS  'X-Bug-Bounty: HackerOne-username'  (added to all requests)")
-                self.ui.print_system("  set MODEL    glm-5:cloud")
+                self.ui.print_system("  set MODEL    glm-4.7:cloud")
                 self.ui.print_system("  run          — start the pentest")
 
             elif cmd == "model" and len(parts) >= 2:
