@@ -148,6 +148,174 @@
         print(f"  [{f['method'].upper()}] {f['action']}  (on page: {f['page']})")
     ```
 
+  ═══════════════════════════════════════════════════════
+  SPA DETECTION & JAVASCRIPT API EXTRACTION (mandatory after spider)
+  ═══════════════════════════════════════════════════════
+  Modern apps (Angular, React, Vue) serve a single HTML page with all routing
+  in JavaScript. The spider above will find ZERO forms and ZERO links on SPAs.
+  You MUST detect this and extract API endpoints from JS bundles.
+
+  ```python
+  import requests, re, time
+  from urllib.parse import urljoin, urlparse
+
+  BASE      = _G['BASE']
+  session   = _G.get('session', requests.Session())
+  ALL_PAGES = _G.get('ALL_PAGES', {})
+  ALL_FORMS = _G.get('ALL_FORMS', [])
+  ALL_LINKS = _G.get('ALL_LINKS', set())
+
+  # ── SPA Detection ──────────────────────────────────────────────────
+  homepage = list(ALL_PAGES.values())[0] if ALL_PAGES else ''
+  SPA_INDICATORS = ['<app-root', '<div id="root"', '<div id="app"',
+                    'ng-app=', 'ng-version=', 'data-reactroot',
+                    '__NEXT_DATA__', '__NUXT__', 'vue-app',
+                    'angular', 'react', 'vue.js', 'ember']
+  is_spa = any(ind.lower() in homepage.lower() for ind in SPA_INDICATORS)
+  # Also detect: very few forms found + JS bundles present
+  if len(ALL_FORMS) <= 1 and ('<script' in homepage and '.js' in homepage):
+      is_spa = True
+
+  _G['IS_SPA'] = is_spa
+  print(f"\n[SPA DETECTION] Is SPA: {is_spa}")
+  if is_spa:
+      print("  Angular/React/Vue detected — extracting API endpoints from JavaScript bundles")
+
+  # ── Extract ALL JavaScript bundle URLs ────────────────────────────
+  JS_URLS = set()
+  for page_url, body in ALL_PAGES.items():
+      for m in re.finditer(r'(?:src|href)=["\']([^"\']*\.js(?:\?[^"\']*)?)["\']', body, re.I):
+          js_url = urljoin(page_url, m.group(1))
+          if urlparse(js_url).netloc == urlparse(BASE).netloc:
+              JS_URLS.add(js_url)
+
+  print(f"  Found {len(JS_URLS)} JavaScript files to analyze")
+
+  # ── Download and parse JS bundles for API endpoints ───────────────
+  API_ENDPOINTS = set()
+  JS_SECRETS    = []  # API keys, tokens found in JS
+
+  # Patterns to find API paths in JavaScript code
+  API_PATTERNS = [
+      # fetch/axios/http calls
+      r'''(?:fetch|get|post|put|delete|patch|axios|http\.)\s*\(\s*[`'"](\/[a-zA-Z0-9/_.-]{2,})[`'"]''',
+      # String assignments that look like API paths
+      r'''[`'"](\/(?:api|rest|v[12]|graphql|auth|user|admin|product|order|basket|card|address|feedback|complaint|recycle|challenge|security|captcha|track|wallet|deliver)[a-zA-Z0-9/_.-]*)[`'"]''',
+      # URL concatenation patterns
+      r'''[`'"](\/rest\/[a-zA-Z0-9/_.-]+)[`'"]''',
+      r'''[`'"](\/api\/[a-zA-Z0-9/_.-]+)[`'"]''',
+      # Angular HttpClient patterns
+      r'''\.(?:get|post|put|delete|patch)\s*(?:<[^>]*>)?\s*\(\s*[`'"](\/[a-zA-Z0-9/_.-]{2,})[`'"]''',
+      # apiUrl/baseUrl concatenation
+      r'''(?:apiUrl|baseUrl|endpoint|api_url|API_URL)\s*\+\s*[`'"](\/[a-zA-Z0-9/_.-]{2,})[`'"]''',
+      r'''(?:apiUrl|baseUrl|endpoint|api_url|API_URL)\s*[:=]\s*[`'"]((?:https?:\/\/)?[a-zA-Z0-9._-]*\/[a-zA-Z0-9/_.-]+)[`'"]''',
+  ]
+
+  # Secret patterns
+  SECRET_PATTERNS = [
+      (r'''(?:api[_-]?key|apikey|api_secret|token|secret|password|passwd|authorization)\s*[:=]\s*[`'"]([a-zA-Z0-9_/+=.-]{8,})[`'"]''', 'API Key/Secret'),
+      (r'''(?:Bearer|Basic)\s+([a-zA-Z0-9_/+=.-]{20,})''', 'Auth Token'),
+      (r'''eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}''', 'JWT Token'),
+  ]
+
+  for js_url in sorted(JS_URLS):
+      try:
+          r = session.get(js_url, timeout=15)
+          if r.status_code != 200:
+              continue
+          js_body = r.text
+          print(f"  [JS] Analyzing {js_url} ({len(js_body)} bytes)")
+
+          # Extract API paths
+          for pattern in API_PATTERNS:
+              for m in re.finditer(pattern, js_body, re.I):
+                  path = m.group(1)
+                  if path.startswith('/'):
+                      full_url = BASE + path
+                  elif path.startswith('http'):
+                      full_url = path
+                  else:
+                      continue
+                  API_ENDPOINTS.add(full_url)
+
+          # Extract secrets
+          for pattern, secret_type in SECRET_PATTERNS:
+              for m in re.finditer(pattern, js_body, re.I):
+                  val = m.group(1) if '(' in pattern else m.group(0)
+                  JS_SECRETS.append({'type': secret_type, 'value': val[:80], 'file': js_url})
+
+          time.sleep(0.1)
+      except Exception as e:
+          print(f"  [ERR] {js_url}: {e}")
+
+  # ── Probe discovered API endpoints ────────────────────────────────
+  CONFIRMED_APIS = []
+  for api_url in sorted(API_ENDPOINTS):
+      try:
+          r = session.get(api_url, timeout=6, headers={'Accept': 'application/json'})
+          if r.status_code in (200, 201) and len(r.text.strip()) > 10:
+              CONFIRMED_APIS.append({'url': api_url, 'status': r.status_code,
+                                      'size': len(r.text), 'content_type': r.headers.get('Content-Type','')})
+              # Also add to ALL_LINKS so later phases discover them
+              ALL_LINKS.add(api_url)
+              print(f"  [API] {api_url} — {r.status_code} ({len(r.text)} bytes)")
+          elif r.status_code == 401:
+              CONFIRMED_APIS.append({'url': api_url, 'status': 401, 'size': 0, 'content_type': ''})
+              ALL_LINKS.add(api_url)
+              print(f"  [API-AUTH] {api_url} — 401 (needs auth)")
+      except Exception:
+          pass
+
+  # Also try common SPA API paths not found in JS
+  SPA_COMMON_PATHS = [
+      '/rest/user/login', '/rest/user/whoami', '/rest/user/change-password',
+      '/rest/products/search', '/rest/basket/', '/rest/saveLoginIp',
+      '/rest/deluxe-membership', '/rest/memories', '/rest/order-history',
+      '/rest/wallet/balance', '/rest/track-order',
+      '/api/Users', '/api/Products', '/api/Feedbacks', '/api/Complaints',
+      '/api/Recycles', '/api/Challenges', '/api/SecurityQuestions',
+      '/api/SecurityAnswers', '/api/Cards', '/api/Deliverys', '/api/Addresss',
+      '/api/Quantitys', '/api/BasketItems', '/api/PrivacyRequests',
+      '/api/Wallets',
+      '/b2b/v2/orders',
+      '/profile', '/profile/image/upload', '/support/logs',
+      '/file-upload', '/redirect',
+      '/snippets', '/snippets/', '/chatbot', '/chatbot/status',
+      '/metrics', '/promotion', '/video',
+  ]
+  for path in SPA_COMMON_PATHS:
+      url = BASE + path
+      if url in API_ENDPOINTS:
+          continue
+      try:
+          r = session.get(url, timeout=6, headers={'Accept': 'application/json'})
+          if r.status_code in (200, 201, 401, 403) and r.status_code != 404:
+              ALL_LINKS.add(url)
+              if r.status_code in (200, 201) and len(r.text.strip()) > 10:
+                  CONFIRMED_APIS.append({'url': url, 'status': r.status_code,
+                                          'size': len(r.text), 'content_type': r.headers.get('Content-Type','')})
+                  print(f"  [API] {url} — {r.status_code} ({len(r.text)} bytes)")
+              elif r.status_code == 401:
+                  CONFIRMED_APIS.append({'url': url, 'status': 401, 'size': 0, 'content_type': ''})
+                  print(f"  [API-AUTH] {url} — 401 (needs auth)")
+      except Exception:
+          pass
+
+  _G['ALL_LINKS']      = ALL_LINKS
+  _G['API_ENDPOINTS']  = API_ENDPOINTS
+  _G['CONFIRMED_APIS'] = CONFIRMED_APIS
+  _G['JS_SECRETS']     = JS_SECRETS
+
+  print(f"\n=== JS API EXTRACTION COMPLETE ===")
+  print(f"  API endpoints found in JS : {len(API_ENDPOINTS)}")
+  print(f"  Confirmed live APIs       : {len(CONFIRMED_APIS)}")
+  print(f"  Secrets found in JS       : {len(JS_SECRETS)}")
+  if JS_SECRETS:
+      for s in JS_SECRETS[:10]:
+          print(f"    [{s['type']}] {s['value'][:40]}... in {s['file'].split('/')[-1]}")
+  ```
+
   IMPORTANT: The unauthenticated spider runs BEFORE login.
   You MUST run a second spider AFTER login (see Phase 3 — AUTHENTICATED CRAWL below).
   Logged-in users see completely different pages (dashboard, profile, comments, admin).
+  For SPAs: authenticated crawl should also re-probe all API_ENDPOINTS with the auth token.

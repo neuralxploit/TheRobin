@@ -1,4 +1,105 @@
 **Phase 3 — Authentication**
+  ═══════════════════════════════════════════════════════
+  SPA / JSON API LOGIN (try this FIRST for SPAs — before HTML form login)
+  ═══════════════════════════════════════════════════════
+  Many modern apps (Angular, React, Vue) use JSON API login instead of HTML forms.
+  You MUST try JSON API login paths FIRST, especially if _G['IS_SPA'] is True.
+
+  ```python
+  import requests, json, time
+
+  BASE    = _G['BASE']
+  creds_a = _G.get('creds_a', {})
+  is_spa  = _G.get('IS_SPA', False)
+
+  # JSON API login endpoints to try
+  JSON_LOGIN_PATHS = [
+      '/rest/user/login', '/api/login', '/api/auth/login', '/api/v1/login',
+      '/api/v1/auth/login', '/auth/login', '/login', '/api/users/login',
+      '/api/authenticate', '/api/signin', '/api/session', '/api/token',
+      '/rest/auth', '/rest/login', '/rest/authenticate',
+      '/user/login', '/users/login', '/account/login',
+  ]
+
+  # Field name combinations to try
+  JSON_FIELD_COMBOS = [
+      {'email': creds_a.get('username',''), 'password': creds_a.get('password','')},
+      {'username': creds_a.get('username',''), 'password': creds_a.get('password','')},
+      {'user': creds_a.get('username',''), 'pass': creds_a.get('password','')},
+      {'login': creds_a.get('username',''), 'password': creds_a.get('password','')},
+  ]
+
+  api_login_session = requests.Session()
+  api_login_session.verify = False
+  api_login_session.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'
+  api_login_session.headers['Content-Type'] = 'application/json'
+
+  api_login_ok = False
+  api_login_url = None
+
+  for path in JSON_LOGIN_PATHS:
+      url = BASE + path
+      for combo in JSON_FIELD_COMBOS:
+          time.sleep(0.2)
+          try:
+              r = api_login_session.post(url, json=combo, timeout=10)
+              if r.status_code in (200, 201):
+                  try:
+                      data = r.json()
+                      # Look for token/session in response
+                      token = None
+                      if isinstance(data, dict):
+                          # Common token locations
+                          for key_path in [
+                              ('authentication', 'token'), ('token',), ('access_token',),
+                              ('data', 'token'), ('data', 'access_token'),
+                              ('result', 'token'), ('jwt',), ('session',),
+                              ('auth_token',), ('id_token',),
+                          ]:
+                              obj = data
+                              for k in key_path:
+                                  if isinstance(obj, dict) and k in obj:
+                                      obj = obj[k]
+                                  else:
+                                      obj = None
+                                      break
+                              if obj and isinstance(obj, str) and len(obj) > 10:
+                                  token = obj
+                                  break
+
+                      if token:
+                          print(f"[OK] JSON API login SUCCESS: {url}")
+                          print(f"  Token: {token[:50]}...")
+                          api_login_session.headers['Authorization'] = f'Bearer {token}'
+                          api_login_ok = True
+                          api_login_url = url
+                          _G['auth_token'] = token
+                          _G['api_login_url'] = url
+                          # Store which field combo worked
+                          _G['api_login_fields'] = combo
+                          break
+                      elif 'error' not in str(data).lower()[:200]:
+                          print(f"  [INFO] {url} returned 200 but no token found: {str(data)[:200]}")
+                  except Exception:
+                      pass
+          except Exception:
+              continue
+      if api_login_ok:
+          break
+
+  if api_login_ok:
+      _G['session']   = api_login_session
+      _G['session_a'] = api_login_session
+      print(f"\n[OK] SPA/API authentication successful via {api_login_url}")
+      print(f"  Authorization header set with Bearer token")
+  else:
+      if is_spa:
+          print(f"[WARN] JSON API login failed — trying HTML form login as fallback")
+      else:
+          print(f"[INFO] Not a SPA or JSON login not found — using HTML form login")
+  ```
+
+  HTML FORM LOGIN (fallback — or primary for server-rendered apps):
   - Find login form: extract action URL (absolute), field names
   - Test provided credentials first
   - Test common defaults — EXHAUSTIVE list (test ALL of these):
@@ -201,10 +302,19 @@
     creds_a = _G.get('creds_a', {})   # primary account
     creds_b = _G.get('creds_b')       # secondary account (may be None)
 
+    # ── Check if JSON API login already succeeded ────────────────────────────
+    if _G.get('session_a') and _G.get('auth_token'):
+        print("[LOGIN] JSON API login already succeeded — skipping HTML form login")
+        session_a = _G['session_a']
+        _login_success = True
+    else:
+        _login_success = False
+
     # ── Session A: primary user ───────────────────────────────────────────────
-    session_a = requests.Session()
-    session_a.verify = False
-    session_a.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'
+    if not _login_success:
+        session_a = requests.Session()
+        session_a.verify = False
+        session_a.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'
 
     # Find login form — look for forms with password fields (universal, not just "login" in URL)
     all_forms = _G.get('ALL_FORMS', [])
@@ -241,15 +351,16 @@
     user_field = next((f['name'] for f in login_fields if any(kw in f['name'].lower() for kw in ['user', 'email', 'login', 'name', 'account', 'id'])), 'username')
     pass_field = next((f['name'] for f in login_fields if 'pass' in f['name'].lower() or f.get('type') == 'password'), 'password')
 
-    # Store login details in _G for IDOR phase to use
-    _G['login_url'] = login_url
-    _G['user_field'] = user_field
-    _G['pass_field'] = pass_field
+    if not _login_success:
+        # Store login details in _G for IDOR phase to use
+        _G['login_url'] = login_url
+        _G['user_field'] = user_field
+        _G['pass_field'] = pass_field
 
-    r_a = session_a.post(login_url, data={
-        user_field: creds_a.get('username',''),
-        pass_field: creds_a.get('password',''),
-    }, allow_redirects=True)
+        r_a = session_a.post(login_url, data={
+            user_field: creds_a.get('username',''),
+            pass_field: creds_a.get('password',''),
+        }, allow_redirects=True)
 
     # Success check — universal indicators for ANY web app:
     # 1. URL changed away from login page
@@ -274,7 +385,12 @@
         or (_got_cookies and _has_indicators)       # got session + logged-in body
     )
 
-    if _login_success:
+    if not _login_success and '_login_success' not in dir():
+        _login_success = False
+    if _login_success and _G.get('auth_token'):
+        # Already logged in via JSON API — skip form login checks
+        print(f"[OK] Session A already authenticated via API token")
+    elif _login_success:
         print(f"[OK] Session A logged in as {creds_a.get('username')}  (URL: {r_a.url})")
         _G['session']   = session_a
         _G['session_a'] = session_a
@@ -749,7 +865,136 @@
         print(f"  {t}: {len(vals)} unique values — e.g. {list(vals)[:4]}")
     ```
 
-   IDs are now stored in OBJECT_MAP. Proceed immediately to Phase 4.
+   IDs are now stored in OBJECT_MAP.
+
+   ═══════════════════════════════════════════════════════
+   SPA AUTHENTICATED API DISCOVERY (for SPAs — re-probe all APIs with auth token)
+   ═══════════════════════════════════════════════════════
+   If the app is a SPA, the HTML crawl above found very little.
+   Re-probe ALL discovered API endpoints WITH the auth token to discover
+   authenticated-only endpoints and build the attack surface.
+
+   ```python
+   import requests, time, json, re
+   from urllib.parse import urljoin
+
+   BASE    = _G['BASE']
+   session = _G.get('session_a') or _G.get('session')
+   is_spa  = _G.get('IS_SPA', False)
+   CONFIRMED_APIS = _G.get('CONFIRMED_APIS', [])
+   ALL_LINKS = _G.get('ALL_LINKS', set())
+   AUTH_PAGES = _G.get('AUTH_PAGES', {})
+   AUTH_FORMS = _G.get('AUTH_FORMS', [])
+   AUTH_PARAMS = _G.get('AUTH_PARAMS', [])
+
+   if is_spa or len(AUTH_FORMS) < 3:
+       print("\n[SPA AUTH] Re-probing API endpoints with authenticated session...")
+
+       # Re-probe all previously discovered APIs
+       for api in CONFIRMED_APIS:
+           url = api['url']
+           if url in AUTH_PAGES:
+               continue
+           try:
+               r = session.get(url, timeout=8, headers={'Accept': 'application/json'})
+               if r.status_code in (200, 201):
+                   AUTH_PAGES[url] = r.text
+                   print(f"  [AUTH-API] {url} — {r.status_code} ({len(r.text)} bytes)")
+                   # Extract JSON data for ID harvesting
+                   try:
+                       data = r.json()
+                       if isinstance(data, dict) and 'data' in data:
+                           items = data['data']
+                           if isinstance(items, list) and items:
+                               print(f"    Contains {len(items)} items")
+                   except Exception:
+                       pass
+           except Exception:
+               continue
+
+       # Probe additional REST API paths with auth
+       AUTH_API_PATHS = [
+           '/rest/user/whoami', '/rest/user/change-password',
+           '/rest/basket/{bid}', '/rest/order-history',
+           '/rest/wallet/balance', '/rest/deluxe-membership',
+           '/rest/memories', '/rest/saveLoginIp',
+           '/rest/2fa/status', '/rest/chatbot/respond',
+           '/api/Users', '/api/Users/1', '/api/Users/2', '/api/Users/3',
+           '/api/Cards', '/api/Addresss', '/api/Deliverys',
+           '/api/Complaints', '/api/Recycles',
+           '/api/SecurityAnswers', '/api/PrivacyRequests',
+           '/profile', '/accounting', '/administration',
+           '/b2b/v2/orders', '/support/logs',
+           '/api/Quantitys', '/api/BasketItems',
+       ]
+       for path in AUTH_API_PATHS:
+           url = BASE + path
+           if url in AUTH_PAGES:
+               continue
+           try:
+               r = session.get(url, timeout=6, headers={'Accept': 'application/json'})
+               if r.status_code in (200, 201) and len(r.text) > 20:
+                   AUTH_PAGES[url] = r.text
+                   ALL_LINKS.add(url)
+                   print(f"  [AUTH-API] {url} — {r.status_code} ({len(r.text)} bytes)")
+                   # Track URL params for testing
+                   if '?' in r.url:
+                       from urllib.parse import urlparse, parse_qs
+                       parsed = urlparse(r.url)
+                       for param, vals in parse_qs(parsed.query).items():
+                           AUTH_PARAMS.append({
+                               'url': r.url, 'param': param,
+                               'value': vals[0], 'method': 'GET'
+                           })
+               elif r.status_code == 401:
+                   print(f"  [AUTH-API] {url} — 401 (auth required but token rejected)")
+           except Exception:
+               continue
+
+       # For SPAs, also create "virtual forms" from API endpoints for testing phases
+       # This ensures SQLi/XSS/SSTI phases have something to test
+       api_login_fields = _G.get('api_login_fields', {})
+       api_login_url = _G.get('api_login_url', '')
+       if api_login_url and api_login_fields:
+           virtual_form = {
+               'page': api_login_url,
+               'action': api_login_url,
+               'method': 'post',
+               'fields': [{'name': k, 'type': 'text', 'value': v} for k, v in api_login_fields.items()],
+               'hidden': [],
+               'csrf_token': None,
+               'is_json_api': True,
+           }
+           AUTH_FORMS.append(virtual_form)
+           print(f"  [VIRTUAL FORM] Added API login as form: {api_login_url}")
+
+       # Add search endpoint as virtual form
+       for link in ALL_LINKS:
+           if 'search' in link.lower() and '?' not in link:
+               virtual_search = {
+                   'page': link,
+                   'action': link,
+                   'method': 'get',
+                   'fields': [{'name': 'q', 'type': 'text', 'value': 'test'}],
+                   'hidden': [],
+                   'csrf_token': None,
+                   'is_json_api': True,
+               }
+               AUTH_FORMS.append(virtual_search)
+               print(f"  [VIRTUAL FORM] Added search: {link}?q=")
+
+       _G['AUTH_PAGES']  = AUTH_PAGES
+       _G['AUTH_FORMS']  = AUTH_FORMS
+       _G['AUTH_PARAMS'] = AUTH_PARAMS
+       _G['ALL_LINKS']   = ALL_LINKS
+
+       print(f"\n[SPA AUTH] Auth API discovery complete:")
+       print(f"  Auth pages  : {len(AUTH_PAGES)}")
+       print(f"  Auth forms  : {len(AUTH_FORMS)} (including virtual API forms)")
+       print(f"  Auth params : {len(AUTH_PARAMS)}")
+   ```
+
+   Proceed immediately to Phase 4.
    Session B credentials will be requested in Phase 17 (IDOR phase),
    after all other testing is complete.
 
