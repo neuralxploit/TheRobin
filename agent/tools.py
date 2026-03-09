@@ -842,7 +842,7 @@ def read_file(path: str) -> dict:
         # Truncate large files to prevent context overflow
         max_return_size = 50000  # 50KB max in conversation
         truncated = len(content) > max_return_size
-        return {"success": True, "content": content[:max_return_size], "bytes": len(content), "truncated": truncated}
+        return {"success": True, "path": path, "content": content[:max_return_size], "bytes": len(content), "truncated": truncated}
     except FileNotFoundError:
         return {"success": False, "error": f"File not found: {path}"}
     except Exception as e:
