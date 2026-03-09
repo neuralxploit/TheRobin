@@ -318,10 +318,11 @@ def _build_styles():
     ))
     styles.add(ParagraphStyle(
         "CodeBlock", parent=styles["Code"],
-        fontSize=8, leading=10, fontName="Courier",
-        backColor=HexColor("#F5F5F5"), borderWidth=1,
-        borderColor=HexColor("#DDDDDD"), borderPadding=8,
-        spaceBefore=4, spaceAfter=8, wordWrap="CJK",
+        fontSize=7.5, leading=10, fontName="Courier",
+        backColor=HexColor("#F0F0F0"), borderWidth=1,
+        borderColor=HexColor("#CCCCCC"), borderPadding=10,
+        spaceBefore=2, spaceAfter=4, wordWrap="CJK",
+        leftIndent=4, rightIndent=4,
     ))
     styles.add(ParagraphStyle(
         "SmallText", parent=styles["Normal"],
@@ -694,13 +695,21 @@ def _build_detailed_findings(findings, styles):
         card_elements.append(meta_table)
         card_elements.append(Spacer(1, 3 * mm))
 
+        # ── Separator ─────────────────────────────────────────────────
+        card_elements.append(HRFlowable(
+            width="100%", thickness=0.5, color=HexColor("#DDDDDD"),
+            spaceBefore=2, spaceAfter=4,
+        ))
+
         # ── General Description ───────────────────────────────────────
         card_elements.append(Paragraph("<b>Description</b>", styles["SubSection"]))
+        card_elements.append(Spacer(1, 2 * mm))
         card_elements.append(Paragraph(_xml_safe(mitigation["desc"]), styles["Body"]))
         if impact:
+            card_elements.append(Spacer(1, 2 * mm))
             card_elements.append(Paragraph(
                 f"<b>Impact:</b> {_xml_safe(impact)}", styles["Body"]))
-        card_elements.append(Spacer(1, 2 * mm))
+        card_elements.append(Spacer(1, 4 * mm))
 
         # ── Affected Endpoints ────────────────────────────────────────
         if affected:
@@ -735,43 +744,79 @@ def _build_detailed_findings(findings, styles):
 
         # ── Proof of Concept ──────────────────────────────────────────
         card_elements.append(Paragraph("<b>Proof of Concept</b>", styles["SubSection"]))
+        card_elements.append(Spacer(1, 2 * mm))
 
         if request:
-            card_elements.append(Paragraph("<i>Request Sent:</i>", styles["FieldLabel"]))
+            card_elements.append(Paragraph(
+                "<b>Request Sent</b>",
+                ParagraphStyle("poc_label", parent=styles["FieldLabel"],
+                               spaceBefore=4, spaceAfter=2,
+                               textColor=HexColor("#444444")),
+            ))
+            card_elements.append(Spacer(1, 1 * mm))
             card_elements.append(Paragraph(
                 _xml_safe(request).replace("\n", "<br/>"),
                 styles["CodeBlock"]
             ))
+            card_elements.append(Spacer(1, 4 * mm))
 
         if response:
-            card_elements.append(Paragraph("<i>Server Response:</i>", styles["FieldLabel"]))
+            card_elements.append(Paragraph(
+                "<b>Server Response</b>",
+                ParagraphStyle("poc_label2", parent=styles["FieldLabel"],
+                               spaceBefore=4, spaceAfter=2,
+                               textColor=HexColor("#444444")),
+            ))
+            card_elements.append(Spacer(1, 1 * mm))
             card_elements.append(Paragraph(
                 _xml_safe(response).replace("\n", "<br/>"),
                 styles["CodeBlock"]
             ))
+            card_elements.append(Spacer(1, 4 * mm))
 
         if evidence and not request and not response:
-            card_elements.append(Paragraph("<i>Evidence:</i>", styles["FieldLabel"]))
+            card_elements.append(Paragraph(
+                "<b>Evidence</b>",
+                ParagraphStyle("poc_label3", parent=styles["FieldLabel"],
+                               spaceBefore=4, spaceAfter=2,
+                               textColor=HexColor("#444444")),
+            ))
+            card_elements.append(Spacer(1, 1 * mm))
             card_elements.append(Paragraph(
                 _xml_safe(evidence).replace("\n", "<br/>"),
                 styles["CodeBlock"]
             ))
+            card_elements.append(Spacer(1, 4 * mm))
 
         if poc:
-            card_elements.append(Paragraph("<i>Reproduction Command:</i>", styles["FieldLabel"]))
+            card_elements.append(Paragraph(
+                "<b>Reproduction Command</b>",
+                ParagraphStyle("poc_label4", parent=styles["FieldLabel"],
+                               spaceBefore=4, spaceAfter=2,
+                               textColor=HexColor("#444444")),
+            ))
+            card_elements.append(Spacer(1, 1 * mm))
             card_elements.append(Paragraph(
                 _xml_safe(poc).replace("\n", "<br/>"),
                 styles["CodeBlock"]
             ))
 
-        card_elements.append(Spacer(1, 3 * mm))
+        card_elements.append(Spacer(1, 5 * mm))
+
+        # ── Separator line before mitigation ──────────────────────────
+        card_elements.append(HRFlowable(
+            width="100%", thickness=0.5, color=HexColor("#DDDDDD"),
+            spaceBefore=2, spaceAfter=4,
+        ))
 
         # ── Mitigation ────────────────────────────────────────────────
         card_elements.append(Paragraph("<b>Mitigation</b>", styles["SubSection"]))
+        card_elements.append(Spacer(1, 2 * mm))
         card_elements.append(Paragraph(
             "In order to mitigate this issue, we recommend the following measures:",
             styles["Body"]
         ))
+        card_elements.append(Spacer(1, 2 * mm))
         for j, step in enumerate(mitigation["steps"], 1):
             card_elements.append(Paragraph(
                 f"<b>{j}.</b> {_xml_safe(step)}",
@@ -780,33 +825,39 @@ def _build_detailed_findings(findings, styles):
 
         # Reference links
         if mitigation.get("refs"):
-            card_elements.append(Spacer(1, 2 * mm))
+            card_elements.append(Spacer(1, 4 * mm))
             for ref_name, ref_url in mitigation["refs"]:
                 card_elements.append(Paragraph(
-                    f'<b>For more information see:</b> <a href="{_xml_safe(ref_url)}" '
+                    f'<b>Reference:</b> <a href="{_xml_safe(ref_url)}" '
                     f'color="#1565C0">{_xml_safe(ref_name)}</a>',
                     styles["SmallText"]
                 ))
 
         # ── Wrap in a bordered card ───────────────────────────────────
-        # Use a table with colored left border to create the card effect
         card_content = []
         for el in card_elements:
             card_content.append([el])
 
         card_table = Table(card_content, colWidths=[165 * mm])
-        card_table.setStyle(TableStyle([
-            ("LEFTPADDING", (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        card_style = [
+            ("LEFTPADDING", (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
             ("TOPPADDING", (0, 0), (-1, -1), 2),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("LINEBELOW", (0, -1), (-1, -1), 0.5, HexColor("#DDDDDD")),
+            # Colored left border bar
             ("LINEBEFORE", (0, 0), (0, -1), 4, sc["bar"]),
-            ("BACKGROUND", (0, 0), (-1, 0), HexColor("#FAFAFA")),
-        ]))
+            # Light outer border
+            ("BOX", (0, 0), (-1, -1), 0.5, HexColor("#DDDDDD")),
+            # Header row background
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor("#F8F8F8")),
+            # Bottom padding for card
+            ("BOTTOMPADDING", (0, -1), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ]
+        card_table.setStyle(TableStyle(card_style))
 
         elements.append(card_table)
-        elements.append(Spacer(1, 6 * mm))
+        elements.append(Spacer(1, 8 * mm))
 
     if not findings:
         elements.append(Paragraph("No findings to report.", styles["Body"]))
