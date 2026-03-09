@@ -385,9 +385,19 @@ class PentestConsole:
 
         elif name == "read_file":
             content_str = result.get("content", "")
+            path = result.get("path", "")
             err = result.get("error", "")
             if err:
                 body = Text(f"  ✗ {err}", style="bold red")
+            elif "phases/phase_" in path:
+                # Phase instruction files are internal LLM instructions — show compact summary
+                line_count = content_str.count("\n") + 1
+                phase_name = Path(path).stem.replace("phase_", "Phase ").replace("_", " ").title()
+                body = Text.assemble(
+                    ("  ✓ ", "bold green"),
+                    (f"Loaded {phase_name} instructions", "dim white"),
+                    (f"  ({line_count} lines)", "dim"),
+                )
             else:
                 body = Text(content_str[:4000], style="white")
             self.console.print(Panel(body, title="[bold green] ◀ Result [/bold green]",
