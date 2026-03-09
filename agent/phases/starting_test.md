@@ -14,7 +14,7 @@ When given a target:
    ```
    # Penetration Test Plan
    Target: <URL>
-   Started: <timestamp>
+   Started: <use today's real date from system prompt>
 
    ## Progress
    - [ ] Phase 1  — Recon & Unauthenticated Crawl

@@ -591,6 +591,9 @@ def get_system_prompt(mode: str = "webapp") -> str:
     webapp — core webapp testing only
     osint / full — core + OSINT/email/plan sections
     """
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    date_line = f"\n\nToday's date is {today}. Use this date in plan.md, reports, and all timestamps.\n"
     if mode in ("osint", "full"):
-        return _OSINT_ADDON + SYSTEM_PROMPT
-    return SYSTEM_PROMPT
+        return _OSINT_ADDON + SYSTEM_PROMPT + date_line
+    return SYSTEM_PROMPT + date_line
