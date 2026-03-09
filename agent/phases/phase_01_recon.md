@@ -133,6 +133,33 @@
         spider_page(url)
         time.sleep(0.1)  # polite delay
 
+    # ── Deduplicate parameterized URLs ──────────────────────────
+    # /admin/user/1/edit, /admin/user/2/edit, /profile/3/edit are
+    # the SAME form — test once, not N times.  Collapse numeric
+    # path segments so later phases don't waste context retesting.
+    import re as _re
+    def _normalise_path(u):
+        """Replace numeric path segments with {id} for dedup."""
+        p = urlparse(u)
+        parts = p.path.rstrip('/').split('/')
+        norm = '/'.join('{id}' if _re.fullmatch(r'\d+', seg) else seg for seg in parts)
+        return f"{p.scheme}://{p.netloc}{norm}"
+
+    # Deduplicate forms: keep first form per (normalised_action, method, field_names)
+    _seen_forms = set()
+    DEDUPED_FORMS = []
+    for form in ALL_FORMS:
+        norm_action = _normalise_path(form['action'])
+        field_names = tuple(sorted(f['name'] for f in form.get('fields', [])))
+        key = (norm_action, form['method'], field_names)
+        if key not in _seen_forms:
+            _seen_forms.add(key)
+            DEDUPED_FORMS.append(form)
+
+    if len(DEDUPED_FORMS) < len(ALL_FORMS):
+        print(f"\n  [DEDUP] Collapsed {len(ALL_FORMS)} forms → {len(DEDUPED_FORMS)} unique form templates")
+    ALL_FORMS = DEDUPED_FORMS
+
     # Save to globals so all future run_python calls can access them
     _G['ALL_PAGES'] = ALL_PAGES
     _G['ALL_FORMS'] = ALL_FORMS

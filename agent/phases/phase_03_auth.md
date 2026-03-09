@@ -690,6 +690,29 @@
             extract_page(url, r)
             time.sleep(0.1)
 
+    # ── Deduplicate parameterized forms ──────────────────────────
+    # /admin/user/1/edit, /admin/user/2/edit etc. are the SAME form.
+    # Collapse numeric path segments so later phases test once, not N times.
+    import re as _re
+    def _normalise_path(u):
+        p = urlparse(u)
+        parts = p.path.rstrip('/').split('/')
+        norm = '/'.join('{id}' if _re.fullmatch(r'\d+', seg) else seg for seg in parts)
+        return f"{p.scheme}://{p.netloc}{norm}"
+
+    _seen_forms = set()
+    _deduped = []
+    for form in AUTH_FORMS:
+        norm_action = _normalise_path(form['action'])
+        field_names = tuple(sorted(f['name'] for f in form.get('fields', [])))
+        key = (norm_action, form['method'], field_names)
+        if key not in _seen_forms:
+            _seen_forms.add(key)
+            _deduped.append(form)
+    if len(_deduped) < len(AUTH_FORMS):
+        print(f"\n  [DEDUP] Collapsed {len(AUTH_FORMS)} auth forms → {len(_deduped)} unique form templates")
+    AUTH_FORMS = _deduped
+
     _G['AUTH_PAGES']  = AUTH_PAGES
     _G['AUTH_FORMS']  = AUTH_FORMS
     _G['AUTH_PARAMS'] = AUTH_PARAMS
