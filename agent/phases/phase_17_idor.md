@@ -498,6 +498,22 @@
         print(f"  [{f['type']}]  {f.get('url') or f.get('post_url')}")
     if not findings:
         print("  No IDOR confirmed. All tested endpoints appear to enforce authorization.")
+
+    # Store IDOR findings for report
+    _G['IDOR_FINDINGS'] = findings
+    _G.setdefault('FINDINGS', [])
+    for _idf in findings:
+        _sev = 'CRITICAL' if _idf.get('type') == 'Write IDOR' else 'HIGH'
+        _G['FINDINGS'].append({
+            'severity': _sev,
+            'title': f"IDOR ({_idf.get('type','IDOR')}) — {_idf.get('url') or _idf.get('post_url', '')}",
+            'url': _idf.get('url') or _idf.get('post_url', ''),
+            'method': _idf.get('method', 'GET'),
+            'evidence': _idf.get('evidence', ''),
+            'request': _idf.get('request', ''),
+            'response': _idf.get('response', ''),
+            'impact': 'Unauthorized access to other users data, privilege escalation',
+        })
     ```
 
   IDOR CONFIRMATION RULE — only report if you saw REAL sensitive data:

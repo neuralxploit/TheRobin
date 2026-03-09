@@ -298,6 +298,23 @@
   for f in sqli_findings:
       print(f"  [{f['type'].upper()}] {f['method'].upper()} {f['url']} — field: {f['field']}")
   _G['SQLI_FINDINGS'] = sqli_findings
+
+  # Also store in main FINDINGS for PDF report
+  _G.setdefault('FINDINGS', [])
+  for _sf in sqli_findings:
+      _sev = 'CRITICAL' if _sf.get('type') in ('error-based', 'auth-bypass') else 'HIGH'
+      _G['FINDINGS'].append({
+          'severity': _sev,
+          'title': f"SQL Injection ({_sf.get('type','SQLi')}) — {_sf.get('field','')} via {_sf.get('method','').upper()}",
+          'url': _sf.get('url', ''),
+          'method': _sf.get('method', 'GET'),
+          'parameter': _sf.get('field', ''),
+          'payload': _sf.get('payload', ''),
+          'evidence': _sf.get('evidence', ''),
+          'request': _sf.get('request', ''),
+          'response': _sf.get('response', ''),
+          'impact': 'Database extraction, authentication bypass, data manipulation',
+      })
   ```
 
   ONLY report SQLi if error strings appear OR boolean diff > 200 bytes with real data content.

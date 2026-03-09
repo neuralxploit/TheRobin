@@ -30,36 +30,15 @@ print("=" * 70)
 
 all_findings = list(_G.get('FINDINGS', []))
 
-for sf in _G.get('SQLI_FINDINGS', []):
-    all_findings.append({
-        'severity': 'CRITICAL',
-        'title': f"SQL Injection — {sf.get('type','SQLi')} ({sf.get('field','')})",
-        'url': sf.get('url', ''),
-    })
-for cf in _G.get('CMDI_FINDINGS', []):
-    all_findings.append({
-        'severity': 'CRITICAL',
-        'title': f"Command Injection — {cf.get('param','')} ({cf.get('method','')})",
-        'url': cf.get('url', ''),
-    })
-for xf in _G.get('XSS_FINDINGS', []):
-    all_findings.append({
-        'severity': xf.get('severity', 'HIGH'),
-        'title': f"XSS — {xf.get('type','XSS')} in {xf.get('param','')}",
-        'url': xf.get('url', ''),
-    })
-for idf in _G.get('IDOR_FINDINGS', []):
-    all_findings.append({
-        'severity': idf.get('severity', 'HIGH'),
-        'title': f"IDOR — {idf.get('type','IDOR')}",
-        'url': idf.get('url', ''),
-    })
-for jf in _G.get('JS_FINDINGS', []):
-    all_findings.append({
-        'severity': jf.get('sev', jf.get('severity', 'HIGH')),
-        'title': f"JS: {jf.get('type', 'JS Issue')}",
-        'url': jf.get('file', jf.get('url', '')),
-    })
+# Deduplicate by title (phases now store directly in FINDINGS)
+_seen_titles = set()
+_deduped = []
+for _f in all_findings:
+    _key = _f.get('title', '')
+    if _key not in _seen_titles:
+        _seen_titles.add(_key)
+        _deduped.append(_f)
+all_findings = _deduped
 
 if not all_findings:
     print("\n[INFO] No critical/high vulnerabilities confirmed.")

@@ -251,6 +251,7 @@
               print(f"    Pre-login:  {pre_cookies[key][:40]}")
               print(f"    Post-login: {post_cookies[key][:40]}")
               fixation_vuln = True
+              _G['session_fixation'] = True
   if not fixation_vuln:
       print("  [OK] Session cookies rotated after login")
   ```
@@ -1002,3 +1003,34 @@
    after all other testing is complete.
 
    ═══════════════════════════════════════════════════════
+
+---
+
+**MANDATORY — Store authentication findings before moving on:**
+
+```python
+_G.setdefault('FINDINGS', [])
+
+# Store default credential findings
+if _G.get('discovered_creds'):
+    _cred_list = ', '.join([f"{c['username']}/{c['password']}" for c in _G['discovered_creds'][:5]])
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': f"Default Credentials Found ({len(_G['discovered_creds'])} accounts)",
+        'url': _G.get('login_url', BASE + '/login'),
+        'evidence': f"Working credentials: {_cred_list}",
+        'impact': 'Unauthorized access using default or weak credentials',
+    })
+
+# Store session fixation finding if detected
+if _G.get('session_fixation'):
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': 'Session Fixation: Session ID Not Rotated After Login',
+        'url': _G.get('login_url', BASE + '/login'),
+        'evidence': 'Session cookie value remained the same before and after authentication',
+        'impact': 'Attacker can fixate session ID and hijack authenticated session',
+    })
+
+print(f"[+] Stored auth findings: {len(_G.get('discovered_creds', []))} default creds")
+```

@@ -261,4 +261,20 @@
   for f in xss_findings:
       print(f"  [{f['type'].upper()}] {f.get('method','POST')} {f['url']} — {f['param']}: {f['payload'][:50]}")
   _G['XSS_FINDINGS'] = xss_findings
+
+  # Also store in main FINDINGS for PDF report
+  _G.setdefault('FINDINGS', [])
+  for _xf in xss_findings:
+      _G['FINDINGS'].append({
+          'severity': _xf.get('severity', 'HIGH'),
+          'title': f"XSS ({_xf.get('type','XSS')}) — {_xf.get('param','')} via {_xf.get('method','?')}",
+          'url': _xf.get('url', ''),
+          'method': _xf.get('method', 'GET'),
+          'parameter': _xf.get('param', ''),
+          'payload': _xf.get('payload', ''),
+          'evidence': _xf.get('evidence', ''),
+          'request': _xf.get('request', ''),
+          'response': _xf.get('response', ''),
+          'impact': 'Session hijacking, credential theft, defacement via cross-site scripting',
+      })
   ```

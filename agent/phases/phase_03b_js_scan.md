@@ -170,6 +170,17 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
       # Store findings globally for report generation
       _G['JS_FINDINGS'] = js_findings
 
+      # Also store in main FINDINGS for PDF report
+      _G.setdefault('FINDINGS', [])
+      for _jf in js_findings:
+          _G['FINDINGS'].append({
+              'severity': _jf.get('severity', 'HIGH'),
+              'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
+              'url': _jf.get('url', ''),
+              'evidence': _jf.get('match', _jf.get('evidence', '')),
+              'impact': 'Exposed credentials or API keys in client-side JavaScript',
+          })
+
       # REPORT SUMMARY TO CONVERSATION (MANDATORY)
       js_critical = [f for f in js_findings if f['severity'] == 'CRITICAL']
       js_high = [f for f in js_findings if f['severity'] == 'HIGH']

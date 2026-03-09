@@ -257,6 +257,16 @@ for _js_url in sorted(_js_urls):
         _js_findings.extend(_file_findings)
 
 _G['JS_FINDINGS'] = _js_findings
+# Also store in main FINDINGS for PDF report
+_G.setdefault('FINDINGS', [])
+for _jf in _js_findings:
+    _G['FINDINGS'].append({
+        'severity': _jf.get('sev', 'HIGH'),
+        'title': f"JS Analysis: {_jf.get('type','')} in {_jf.get('file','').split('/')[-1]}",
+        'url': _jf.get('file', ''),
+        'evidence': _jf.get('match', _jf.get('evidence', '')),
+        'impact': 'Exposed secrets, credentials, or vulnerable code patterns in JavaScript',
+    })
 print(f'\n[JS] External JS analysis complete — {len(_js_findings)} issue(s) across {len(_js_urls)} files')
 
 # ── Scan inline <script> blocks + HTML pages for secrets / info disclosure ────

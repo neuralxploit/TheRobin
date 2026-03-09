@@ -249,3 +249,53 @@
             print(f'[INFO] Server header on HTTP/1.0: {server10}')
     except Exception as e:
         print(f'[INFO] HTTP/1.0 test: {e}')
+
+---
+
+**MANDATORY — Store HTTP attack findings before moving on:**
+
+```python
+_G.setdefault('FINDINGS', [])
+
+# Host header injection
+if '_host_injection' in dir() and _host_injection:
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': 'Host Header Injection',
+        'url': BASE,
+        'evidence': 'Injected Host header value was reflected in the server response',
+        'impact': 'Cache poisoning, password reset hijacking, server-side request routing manipulation',
+    })
+
+# CRLF injection
+if '_crlf_found' in dir() and _crlf_found:
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': 'CRLF / HTTP Header Injection',
+        'url': BASE,
+        'evidence': 'Injected CRLF sequence resulted in arbitrary header in response',
+        'impact': 'HTTP response splitting, session fixation, XSS via injected headers',
+    })
+
+# IP spoofing bypass
+if '_ip_spoof_found' in dir() and _ip_spoof_found:
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': 'IP Spoofing Access Control Bypass',
+        'url': BASE,
+        'evidence': 'X-Forwarded-For header bypassed IP-based access control',
+        'impact': 'Bypass of IP-based restrictions, unauthorized access to admin endpoints',
+    })
+
+# HTTP request smuggling
+if '_smuggling_found' in dir() and _smuggling_found:
+    _G['FINDINGS'].append({
+        'severity': 'MEDIUM',
+        'title': 'HTTP Request Smuggling (CL+TE)',
+        'url': BASE,
+        'evidence': 'Server accepted conflicting Content-Length and Transfer-Encoding headers',
+        'impact': 'Request smuggling, cache poisoning, bypassing security controls',
+    })
+
+print(f"[+] HTTP attack phase findings stored")
+```

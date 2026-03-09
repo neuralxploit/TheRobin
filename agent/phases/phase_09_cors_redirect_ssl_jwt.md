@@ -194,3 +194,43 @@
           print('[MEDIUM] No rate limiting detected — all 15 requests returned identical responses')
           print('  Note: verify manually — some rate limiting only activates after 50+ requests')
   ```
+
+---
+
+**MANDATORY — Store all findings from this phase before moving on:**
+
+```python
+_G.setdefault('FINDINGS', [])
+
+# Store CORS findings
+if '_cors_vuln' in dir() and _cors_vuln:
+    _G['FINDINGS'].append({
+        'severity': _cors_sev,
+        'title': f'CORS Misconfiguration: {_cors_detail}',
+        'url': BASE,
+        'evidence': _cors_evidence,
+        'impact': 'Cross-origin data theft, session hijacking via malicious website',
+    })
+
+# Store Open Redirect findings
+for _redir_f in _G.get('_open_redirects', []):
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': f"Open Redirect via ?{_redir_f.get('param','redirect')}=",
+        'url': _redir_f.get('url', BASE),
+        'evidence': _redir_f.get('evidence', ''),
+        'impact': 'Phishing attacks using trusted domain, credential theft',
+    })
+
+# Store rate limiting finding
+if '_no_rate_limit' in dir() and _no_rate_limit:
+    _G['FINDINGS'].append({
+        'severity': 'MEDIUM',
+        'title': 'No Rate Limiting on Login Endpoint',
+        'url': _G.get('login_url', BASE + '/login'),
+        'evidence': 'Sent 15+ rapid login requests without being blocked',
+        'impact': 'Brute-force attacks against user credentials',
+    })
+
+print(f"[+] Phase 9 stored {len([f for f in _G['FINDINGS'] if 'CORS' in f.get('title','') or 'Redirect' in f.get('title','') or 'Rate' in f.get('title','')])} findings")
+```

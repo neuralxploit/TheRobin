@@ -84,6 +84,17 @@
           print(f"  File: {f['file']}  Line: {f['line']}")
           print(f"  Sources: {f['sources']}  Sinks: {f['sinks']}")
           print(f"  Code: {f['code']}")
+      _G.setdefault('XSS_FINDINGS', []).extend(dom_xss_findings)
+      # Also store in main FINDINGS for PDF report
+      _G.setdefault('FINDINGS', [])
+      for _xf in dom_xss_findings:
+          _G['FINDINGS'].append({
+              'severity': 'HIGH',
+              'title': f"DOM XSS: {_xf.get('desc', _xf.get('type', 'DOM XSS'))} — {_xf.get('param', _xf.get('file', '').split('/')[-1])}",
+              'url': _xf.get('url', _xf.get('file', '')),
+              'evidence': _xf.get('evidence', _xf.get('match', '')),
+              'impact': 'Client-side code execution via DOM-based cross-site scripting',
+          })
   else:
       print("[INFO] No DOM XSS source→sink chains found in JS")
   ```
@@ -218,6 +229,16 @@
               {'type': f['type'], 'url': f['url'], 'param': f['param'],
                'payload': f['payload'], 'severity': 'HIGH'} for f in template_findings
           ])
+          # Also store in main FINDINGS for PDF report
+          _G.setdefault('FINDINGS', [])
+          for _xf in template_findings:
+              _G['FINDINGS'].append({
+                  'severity': 'HIGH',
+                  'title': f"DOM XSS: {_xf.get('desc', _xf.get('type', 'DOM XSS'))} — {_xf.get('param', _xf.get('file', '').split('/')[-1])}",
+                  'url': _xf.get('url', _xf.get('file', '')),
+                  'evidence': _xf.get('evidence', _xf.get('match', '')),
+                  'impact': 'Client-side code execution via DOM-based cross-site scripting',
+              })
           print(f"\n[HIGH] {len(template_findings)} framework template injection(s) found")
       else:
           print("[INFO] No framework template injection found")
@@ -288,6 +309,16 @@
           {'type': f['type'], 'url': f['url'], 'param': f['param'],
            'payload': f['payload'], 'severity': 'HIGH'} for f in encoding_findings
       ])
+      # Also store in main FINDINGS for PDF report
+      _G.setdefault('FINDINGS', [])
+      for _xf in encoding_findings:
+          _G['FINDINGS'].append({
+              'severity': 'HIGH',
+              'title': f"DOM XSS: {_xf.get('desc', _xf.get('type', 'DOM XSS'))} — {_xf.get('param', _xf.get('file', '').split('/')[-1])}",
+              'url': _xf.get('url', _xf.get('file', '')),
+              'evidence': _xf.get('evidence', _xf.get('match', '')),
+              'impact': 'Client-side code execution via DOM-based cross-site scripting',
+          })
       print(f"\n[HIGH] {len(encoding_findings)} encoding bypass XSS found")
   else:
       print("[INFO] No encoding bypass XSS found")

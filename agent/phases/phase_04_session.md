@@ -85,3 +85,43 @@
 
       print('\n[Cookie Inject] Done')
   ```
+
+---
+
+**MANDATORY — Store session findings before moving on:**
+
+```python
+_G.setdefault('FINDINGS', [])
+
+# Cookie flag findings should already be stored by Phase 2 headers check.
+# Store any cookie injection findings from this phase:
+if '_cookie_xss_found' in dir() and _cookie_xss_found:
+    _G['FINDINGS'].append({
+        'severity': 'HIGH',
+        'title': 'XSS via Cookie Injection',
+        'url': BASE,
+        'evidence': 'XSS payload in cookie value was reflected and executed',
+        'impact': 'Cross-site scripting via cookie manipulation',
+    })
+
+if '_cookie_sqli_found' in dir() and _cookie_sqli_found:
+    _G['FINDINGS'].append({
+        'severity': 'CRITICAL',
+        'title': 'SQL Injection via Cookie',
+        'url': BASE,
+        'evidence': 'SQL injection payload in cookie value triggered database error',
+        'impact': 'Database extraction via cookie-based SQL injection',
+    })
+
+# Missing SameSite attribute
+if '_missing_samesite' in dir() and _missing_samesite:
+    _G['FINDINGS'].append({
+        'severity': 'MEDIUM',
+        'title': 'Cookie Missing SameSite Attribute',
+        'url': BASE,
+        'evidence': 'Session cookie does not set SameSite attribute',
+        'impact': 'Cross-site request forgery attacks possible',
+    })
+
+print(f"[+] Session phase stored findings")
+```
