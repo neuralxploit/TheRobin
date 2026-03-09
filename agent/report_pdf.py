@@ -365,26 +365,22 @@ def _build_styles():
 # ── Severity badge as a mini-table ────────────────────────────────────────────
 
 def _sev_badge(sev: str, styles):
-    """Create a colored severity badge as a small table."""
+    """Create a colored severity badge as a styled Paragraph.
+
+    Using a Paragraph instead of a nested Table avoids ReportLab's
+    row-height miscalculation that causes badges to overlap.
+    """
     s = sev.upper()
     sc = SEV_COLORS.get(s, SEV_COLORS["INFO"])
-    return Table(
-        [[Paragraph(f"<b>{s}</b>", ParagraphStyle(
-            "badge", fontSize=8, leading=10, alignment=TA_CENTER,
+    return Paragraph(
+        f"<b>{s}</b>",
+        ParagraphStyle(
+            f"badge_{s}", fontSize=8, leading=12, alignment=TA_CENTER,
             textColor=sc["text"], fontName="Helvetica-Bold",
-        ))]],
-        colWidths=[60],
-        rowHeights=[16],
-        style=TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), sc["bg"]),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("ROUNDEDCORNERS", [3, 3, 3, 3]),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING", (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ]),
+            backColor=sc["bg"],
+            borderPadding=3,
+            spaceBefore=0, spaceAfter=0,
+        ),
     )
 
 
@@ -581,10 +577,11 @@ def _build_findings_overview(findings, counts, styles):
         ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 10),
         ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#CCCCCC")),
+        ("ALIGN", (0, 1), (0, -2), "CENTER"),
         ("ALIGN", (1, 0), (1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     elements.append(dist_table)
     elements.append(Spacer(1, 6 * mm))
@@ -606,17 +603,19 @@ def _build_findings_overview(findings, counts, styles):
         ])
 
     summary_table = Table(summary_data,
-                          colWidths=[10 * mm, 20 * mm, 70 * mm, 18 * mm, 50 * mm])
+                          colWidths=[10 * mm, 22 * mm, 68 * mm, 16 * mm, 48 * mm],
+                          repeatRows=1)
     summary_style = [
         ("BACKGROUND", (0, 0), (-1, 0), HexColor("#F0F0F0")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#CCCCCC")),
         ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (1, 0), (1, -1), "CENTER"),
         ("ALIGN", (3, 0), (3, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]
     # Alternate row colors
     for i in range(1, len(summary_data)):
@@ -1074,15 +1073,16 @@ def _build_appendix(styles):
             Paragraph(_xml_safe(definition), styles["SmallText"]),
         ])
 
-    sev_table = Table(sev_data, colWidths=[22 * mm, 25 * mm, 118 * mm])
+    sev_table = Table(sev_data, colWidths=[24 * mm, 25 * mm, 116 * mm])
     sev_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), HexColor("#F0F0F0")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#CCCCCC")),
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     elements.append(sev_table)
     elements.append(Spacer(1, 10 * mm))
