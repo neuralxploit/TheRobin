@@ -121,7 +121,47 @@ while True:
             sys.stdout = _saved_out
             sys.stderr = _saved_err
 
-        result = json.dumps({"stdout": _out.getvalue(), "stderr": _err.getvalue()})
+        # ── Auto-capture findings from stdout ───────────────────────
+        # LLMs often print [CRITICAL]/[HIGH]/etc but forget to store
+        # in _G['FINDINGS']. Parse stdout and auto-add missing ones.
+        _stdout_text = _out.getvalue()
+        _findings = _G.setdefault('FINDINGS', [])
+        _existing_titles = {f.get('title','') for f in _findings}
+        import re as _re
+        for _line in _stdout_text.split('\n'):
+            _m = _re.match(
+                r'\s*\[?(CRITICAL|HIGH|MEDIUM|LOW)\]?\s*[—\-:\s]+(.+)',
+                _line.strip()
+            )
+            if not _m:
+                continue
+            _sev = _m.group(1).upper()
+            _rest = _m.group(2).strip()
+            # Extract URL if present (http://... at end or after " — ")
+            _url = ''
+            _um = _re.search(r'(https?://\S+)', _rest)
+            if _um:
+                _url = _um.group(1).rstrip(')')
+            # Clean title: remove URL part and trailing separators
+            _title = _re.sub(r'\s*[—\-]+\s*https?://\S+', '', _rest).strip().rstrip(' —-:')
+            if not _title or len(_title) < 5:
+                continue
+            # Skip if already stored (fuzzy: check if title is substring or vice versa)
+            _dominated = False
+            for _et in _existing_titles:
+                if _title.lower() in _et.lower() or _et.lower() in _title.lower():
+                    _dominated = True
+                    break
+            if not _dominated:
+                _findings.append({
+                    'severity': _sev,
+                    'title': _title,
+                    'url': _url,
+                    'auto_captured': True,
+                })
+                _existing_titles.add(_title)
+
+        result = json.dumps({"stdout": _stdout_text, "stderr": _err.getvalue()})
         sys.stdout.write(result + "\n")
         sys.stdout.write(_SENTINEL + "\n")
         sys.stdout.flush()
