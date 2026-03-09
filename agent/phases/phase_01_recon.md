@@ -48,8 +48,10 @@
           for h in r.history:
               print(f"  {h.status_code} → {h.headers.get('Location', '?')}")
       print(f"Final URL: {r.url}  (Status: {r.status_code})")
-      # Set BASE to the final landing URL — all links must be built from here
-      BASE = r.url.rstrip('/')
+      # Set BASE to the ORIGIN of the target (scheme + host + port), NOT the redirect destination.
+      # If target redirects / → /login, we still want BASE = http://host:port
+      _parsed = urlparse(target)
+      BASE = f"{_parsed.scheme}://{_parsed.netloc}".rstrip('/')
       soup = BeautifulSoup(r.text, 'html.parser')
   - Print: status code, server header, X-Powered-By, detected technologies
   - Identify: CMS? Framework? Language? Interesting paths?

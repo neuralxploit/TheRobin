@@ -94,6 +94,7 @@ _SENTINEL = "<<<PENTEST_REPL_DONE_9F2A>>>"
 _G = {k: v for k, v in globals().items()}
 _G["json"] = json
 _G["__builtins__"] = __builtins__
+_G["_G"] = _G  # so exec'd code can reference the persistent namespace
 
 while True:
     try:
