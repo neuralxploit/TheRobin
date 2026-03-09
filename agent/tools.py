@@ -96,6 +96,19 @@ _G["json"] = json
 _G["__builtins__"] = __builtins__
 _G["_G"] = _G  # so exec'd code can reference the persistent namespace
 
+# Helper so LLM can call write_file()/read_file() inside run_python code
+def _repl_write_file(fname, content):
+    p = Path(fname)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content)
+    print(f"[OK] Saved: {fname} ({len(content)} bytes)")
+
+def _repl_read_file(fname):
+    return Path(fname).read_text()
+
+_G["write_file"] = _repl_write_file
+_G["read_file"] = _repl_read_file
+
 while True:
     try:
         header = sys.stdin.readline()

@@ -76,6 +76,97 @@ OWASP_MAP = {
     "Data Exposure": "A02:2021 Cryptographic Failures",
 }
 
+# ── CVSS v3.1 auto-scoring ────────────────────────────────────────────────────
+# Maps vulnerability keywords → (score, vector_string)
+# Based on standard CVSS v3.1 base metrics for each vulnerability class.
+# These are reasonable defaults — real CVSS depends on exact conditions.
+CVSS_MAP = {
+    # CRITICAL class — Remote Code Execution, Auth Bypass, Data Breach
+    "RCE":                  (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "Remote Code":          (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "Deserialization":      (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "Pickle":               (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "Command Injection":    (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "CMDi":                 (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "SQL Injection":        (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "SQLi":                 (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "Auth Bypass":          (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "NoSQL Injection":      (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    "NoSQL":                (9.8, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+    # HIGH class — SSTI, SSRF, XSS, Secrets, IDOR
+    "SSTI":                 (9.1, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"),
+    "Template Injection":   (9.1, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"),
+    "SSRF":                 (8.6, "AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N"),
+    "XXE":                  (8.2, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"),
+    "Path Traversal":       (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "File Read":            (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "XSS":                  (6.1, "AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+    "Stored XSS":           (6.5, "AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N"),
+    "DOM XSS":              (6.1, "AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+    "IDOR":                 (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Privilege Escalation": (8.8, "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"),
+    "privilege-escalation": (8.8, "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"),
+    "Broken Access":        (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Access Control":       (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Secret":               (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Exposed":              (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Hardcoded":            (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "AWS":                  (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "API Key":              (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Default Cred":         (8.6, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"),
+    "Data Exposure":        (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Excessive Data":       (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "excessive-data":       (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "Unauth":               (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "File Upload":          (8.1, "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"),
+    "JWT":                  (7.5, "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    # MEDIUM class — CSRF, CORS, Smuggling, Debug, Config
+    "CSRF":                 (6.5, "AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:N"),
+    "CORS":                 (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "Open Redirect":        (6.1, "AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+    "Smuggling":            (5.9, "AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"),
+    "Request Smuggling":    (5.9, "AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"),
+    "Debug":                (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "debug-mode":           (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "Rate Limit":           (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"),
+    "no-rate-limit":        (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"),
+    "Race Condition":       (5.9, "AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"),
+    "Business Logic":       (5.4, "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"),
+    "Mass Assignment":      (6.5, "AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:N"),
+    "GraphQL":              (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "CRLF":                 (6.1, "AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+    # LOW class — Missing headers, info disclosure
+    "Missing":              (4.3, "AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N"),
+    "Cookie":               (4.3, "AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N"),
+    "Session":              (5.4, "AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N"),
+    "Version":              (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "jQuery":               (6.1, "AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+    "CVE":                  (6.1, "AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+    "Disclosure":           (5.3, "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "Info":                 (3.7, "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+}
+
+
+def _guess_cvss(title: str, severity: str = "") -> str:
+    """Auto-calculate CVSS v3.1 score + vector from finding title."""
+    if not title:
+        return "—"
+    t = title
+    # Try each keyword — longer/more-specific keywords first via dict order
+    for keyword, (score, vector) in CVSS_MAP.items():
+        if keyword.lower() in t.lower():
+            return f"{score} ({vector})"
+    # Fallback: assign a score range based on severity
+    sev_defaults = {
+        "CRITICAL": "9.0 (estimated)",
+        "HIGH":     "7.0 (estimated)",
+        "MEDIUM":   "5.0 (estimated)",
+        "LOW":      "3.0 (estimated)",
+        "INFO":     "0.0",
+    }
+    return sev_defaults.get(severity.upper(), "—")
+
+
 # ── Mitigation templates ──────────────────────────────────────────────────────
 
 MITIGATION_MAP = {
@@ -592,13 +683,16 @@ def _build_findings_overview(findings, counts, styles):
     for i, f in enumerate(findings, 1):
         sev = f.get("severity", "INFO").upper()
         title = _xml_safe(f.get("title", "—"))[:60]
-        cvss = str(f.get("cvss", f.get("detail", {}).get("cvss", "—")))
+        raw_cvss = f.get("cvss", f.get("detail", {}).get("cvss", ""))
+        cvss = str(raw_cvss) if raw_cvss and str(raw_cvss) != "—" else _guess_cvss(f.get("title", ""), sev)
+        # For summary table, show just the numeric score (vector is too long)
+        cvss_short = cvss.split(" ")[0] if cvss and cvss != "—" else "—"
         owasp = _guess_owasp(f.get("title", ""))
         summary_data.append([
             str(i),
             _sev_badge(sev, styles),
             Paragraph(title, styles["SmallText"]),
-            cvss,
+            cvss_short,
             Paragraph(_xml_safe(owasp), styles["SmallText"]),
         ])
 
@@ -641,7 +735,8 @@ def _build_detailed_findings(findings, styles):
         method = f.get("method", detail.get("method", "—"))
         param = f.get("param", detail.get("param", detail.get("field", "—")))
         payload = _xml_safe(f.get("payload", detail.get("payload", "—")))
-        cvss = str(f.get("cvss", detail.get("cvss", "—")))
+        raw_cvss = f.get("cvss", detail.get("cvss", ""))
+        cvss = str(raw_cvss) if raw_cvss and str(raw_cvss) != "—" else _guess_cvss(f.get("title", ""), sev)
         owasp = _guess_owasp(f.get("title", ""))
         evidence = _trunc(f.get("evidence", detail.get("evidence", "")), 1200)
         poc = _trunc(f.get("poc", detail.get("poc", "")), 1200)
