@@ -16,11 +16,28 @@ Context management (mirrors how Anthropic/Claude Code works):
 """
 
 import json
+import re
 import time
+from pathlib import Path
 from typing import Callable
 from .ollama import simple_chat, stream_chat, ContextOverflowError, _estimate_tokens
 from .tools import TOOL_SCHEMAS, execute_tool
 from .prompts import get_system_prompt
+
+
+def _next_uncompleted_phase(workspace_dir) -> str | None:
+    """Parse plan.md and return the first unchecked phase line, e.g. 'Phase 7'."""
+    plan_path = Path(workspace_dir) / "plan.md"
+    if not plan_path.exists():
+        return None
+    try:
+        for line in plan_path.read_text().splitlines():
+            m = re.match(r'\s*-\s*\[ \]\s*(Phase\s+\d+)', line)
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return None
 
 # System prompt is ~30K tokens. Compact before hitting context limits.
 # 100K total = ~70K conversation on top of system prompt = 3-4 phases of work.
@@ -376,12 +393,16 @@ class AgentLoop:
                         else:
                             non_tool.append(m)
 
+                    from agent.tools import WORKSPACE_DIR as _ws3
+                    _np = _next_uncompleted_phase(_ws3)
+                    _phase_order = f" Start with {_np} and continue sequentially." if _np else ""
                     mini_sys = [{
                         "role": "system",
                         "content": (
                             "You are a penetration tester mid-engagement. "
                             "Context was compacted due to size. "
                             "Read plan.md with read_file if it exists, then continue testing."
+                            f"{_phase_order}"
                         ),
                     }]
                     self.history = mini_sys + memory_msgs + non_tool[-6:]
@@ -432,6 +453,14 @@ class AgentLoop:
                 # Nudge the model to keep running after compaction — without this
                 # the model often stops and waits for user input instead of continuing.
                 from agent.tools import WORKSPACE_DIR as _ws
+                next_phase = _next_uncompleted_phase(_ws)
+                phase_hint = ""
+                if next_phase:
+                    phase_hint = (
+                        f"\n\n**IMPORTANT: The next uncompleted phase is {next_phase}. "
+                        f"You MUST start {next_phase} now.** Do not skip ahead. "
+                        "Follow the phase order: complete each phase sequentially before moving on."
+                    )
                 self.history.append({
                     "role": "user",
                     "content": (
@@ -441,7 +470,7 @@ class AgentLoop:
                         "Also read_file('findings.log') for full finding list. "
                         "Then continue with the next uncompleted phase IMMEDIATELY. "
                         "Do NOT stop. Do NOT ask the user anything. Do NOT say 'Ready to proceed?' "
-                        "Just start the next phase right now."
+                        f"Just start the next phase right now.{phase_hint}"
                     ),
                 })
                 _just_compacted = True
@@ -466,11 +495,16 @@ class AgentLoop:
                     )
                     time.sleep(10)
                     # Nudge agent to continue from where it left off
+                    from agent.tools import WORKSPACE_DIR as _ws2
+                    next_phase = _next_uncompleted_phase(_ws2)
+                    reconnect_hint = ""
+                    if next_phase:
+                        reconnect_hint = f" You should be working on {next_phase}."
                     self.history.append({
                         "role": "user",
                         "content": (
                             "Connection was temporarily lost. Continue the penetration test "
-                            "exactly where you left off. Check plan.md if needed."
+                            f"exactly where you left off.{reconnect_hint} Check plan.md if needed."
                         ),
                     })
                     continue
