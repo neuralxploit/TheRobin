@@ -42,7 +42,10 @@ When given a target:
    - [ ] Phase 23 — XXE & Path Traversal
    - [ ] Phase 24 — API Security
    - [ ] Phase 25 — Race Conditions
-   - [ ] Phase 26 — Final Report
+   - [ ] Phase 26 — Sensitive Files & Directories
+   - [ ] Phase 27 — Account Security & Enumeration
+   - [ ] Phase 28 — Error Handling & Info Disclosure
+   - [ ] Phase 29 — Final Report
 
    ## Findings
    (updated as vulnerabilities are confirmed)

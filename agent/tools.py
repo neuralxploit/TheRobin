@@ -141,6 +141,23 @@ while True:
         _findings = _G.setdefault('FINDINGS', [])
         _existing_titles = {f.get('title','') for f in _findings}
         import re as _re
+
+        # Patterns that look like findings but are actually noise/summaries
+        _JUNK_PATTERNS = [
+            r'\d+\s*finding',           # "76 finding(s)", "2 finding(s)"
+            r'summary',                  # summary lines
+            r'^\s*#',                    # markdown headings
+            r'tested\b.*\bsecret',       # "tested 30 secrets"
+            r'^\s*\d+\s*(tested|checks|tests|endpoints|urls|cookies)',
+            r'(good|ok|pass|safe|rejected|not\s+vulnerable)',  # negative results
+            r'^\s*Done\b',              # "Done" status lines
+            r'^\s*Phase\s+\d+',         # phase markers
+            r'^\s*Testing\b',           # "Testing XSS..." status lines
+            r'^\s*Checking\b',          # "Checking endpoint..." status
+            r'stored\s+\d+',            # "Stored 5 JWTs in _G"
+            r'skipping',                # "skipping deep JWT testing"
+        ]
+
         for _line in _stdout_text.split('\n'):
             _m = _re.match(
                 r'\s*\[?(CRITICAL|HIGH|MEDIUM|LOW)\]?\s*[—\-:\s]+(.+)',
@@ -150,6 +167,16 @@ while True:
                 continue
             _sev = _m.group(1).upper()
             _rest = _m.group(2).strip()
+
+            # Skip junk / summary / status lines
+            _is_junk = False
+            for _jp in _JUNK_PATTERNS:
+                if _re.search(_jp, _rest, _re.IGNORECASE):
+                    _is_junk = True
+                    break
+            if _is_junk:
+                continue
+
             # Extract URL if present (http://... at end or after " — ")
             _url = ''
             _um = _re.search(r'(https?://\S+)', _rest)
@@ -727,6 +754,13 @@ def _auto_track(output: str):
     log_path = WORKSPACE_DIR / "findings.log"
 
     # ── Extract findings ──────────────────────────────────────────────────
+    # Patterns that are status/summary lines, NOT real findings
+    _TRACK_JUNK = _re.compile(
+        r'(\d+\s*finding|\bsummary\b|\btested\b|\bskipping\b|\bdone\b'
+        r'|\bgood\b|\brejected\b|\bnot vulnerable\b|\bchecked\b|\bstored\s+\d+'
+        r'|\bphase\s+\d+\b|\btesting\b|\binfo\b.*\bno\s)',
+        _re.IGNORECASE,
+    )
     new_findings = []
     seen = set()
     for line in output.splitlines():
@@ -734,6 +768,9 @@ def _auto_track(output: str):
         if m:
             sev = m.group("sev").upper()
             desc = m.group("desc").strip()[:200]
+            # Skip junk lines
+            if _TRACK_JUNK.search(desc):
+                continue
             key = f"{sev}:{desc[:60]}"
             if key not in seen:
                 seen.add(key)

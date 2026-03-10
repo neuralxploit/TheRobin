@@ -42,7 +42,7 @@ Examples:
     parser.add_argument(
         "--model", "-m",
         metavar="MODEL",
-        help="Ollama model (e.g. glm-5:cloud, glm-4.7:cloud)",
+        help="Ollama model (e.g. glm-4.7:cloud)",
     )
     parser.add_argument(
         "--username", "-u",

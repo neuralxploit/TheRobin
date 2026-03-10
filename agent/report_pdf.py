@@ -1261,14 +1261,122 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
     # Sort by severity
     all_findings.sort(key=lambda f: SEV_RANK.get(f.get("severity", "INFO").upper(), 4))
 
-    # Deduplicate
-    seen = set()
+    # ── Filter out junk / summary lines that got captured as findings ──
+    import re as _re
+    _JUNK_RE = _re.compile(
+        r'(\d+\s*finding|\bsummary\b|\btested\b|\bskipping\b|\bdone\b'
+        r'|\bgood\b|\brejected\b|\bnot vulnerable\b|\bno\s+(issues|vulns?|findings?)\b'
+        r'|\bphase\s+\d+\b|\bstored\s+\d+|\bchecked\b)',
+        _re.IGNORECASE,
+    )
+    all_findings = [
+        f for f in all_findings
+        if not _JUNK_RE.search(f.get("title", ""))
+        and len(f.get("title", "")) >= 8
+    ]
+
+    # ── Smart deduplication ────────────────────────────────────────────
+    # Vuln category keywords — findings with same category + same endpoint = same finding
+    _VULN_CATEGORIES = {
+        'idor': 'IDOR', 'horizontal idor': 'IDOR', 'vertical idor': 'IDOR',
+        'privilege escalation': 'Privilege Escalation', 'privesc': 'Privilege Escalation',
+        'mass assignment': 'Mass Assignment',
+        'xss': 'XSS', 'cross-site scripting': 'XSS', 'stored xss': 'XSS', 'reflected xss': 'XSS',
+        'sqli': 'SQLi', 'sql injection': 'SQLi',
+        'csrf': 'CSRF', 'cross-site request forgery': 'CSRF',
+        'ssrf': 'SSRF', 'server-side request forgery': 'SSRF',
+        'jwt': 'JWT', 'json web token': 'JWT',
+        'workflow bypass': 'Workflow Bypass', 'workflow-bypass': 'Workflow Bypass',
+        'step accessible': 'Workflow Bypass', 'accessible directly': 'Workflow Bypass',
+        'business logic': 'Business Logic',
+        'command injection': 'Command Injection', 'cmdi': 'Command Injection',
+        'xxe': 'XXE', 'xml external entity': 'XXE',
+        'file upload': 'File Upload', 'upload': 'File Upload',
+        'path traversal': 'Path Traversal', 'directory traversal': 'Path Traversal',
+        'open redirect': 'Open Redirect',
+        'cors': 'CORS', 'misconfiguration': 'Misconfiguration',
+    }
+
+    def _extract_category(title):
+        """Extract vulnerability category from title for grouping."""
+        t = title.lower()
+        for keyword, cat in _VULN_CATEGORIES.items():
+            if keyword in t:
+                return cat
+        return None
+
+    def _normalize_url(url):
+        """Normalize URL: strip query, collapse numeric segments."""
+        u = _re.sub(r'[?#].*$', '', (url or "")).rstrip("/").lower()
+        u = _re.sub(r'/\d+', '/N', u)
+        # Strip fragment (Angular routes like /#/checkout)
+        u = _re.sub(r'/#/', '/', u)
+        return u
+
+    def _normalize_title(title):
+        """Normalize title for comparison."""
+        t = title.lower().strip()
+        t = _re.sub(r'^\[?(critical|high|medium|low|info)\]?\s*[:\-—]*\s*', '', t)
+        t = _re.sub(r'[\s\-—:]+', ' ', t).strip()
+        t = _re.sub(r'https?://\S+', '', t).strip()
+        return t
+
+    seen_exact = set()
+    # category_url_map: (category, normalized_url) → best finding
+    category_url_map = {}
+    # For findings without a category, use normalized title
+    title_map = {}
     deduped = []
+
     for f in all_findings:
-        key = (f.get("title", ""), f.get("url", ""))
-        if key not in seen:
-            seen.add(key)
-            deduped.append(f)
+        title = f.get("title", "")
+        url = f.get("url", "")
+
+        # Exact dedup first
+        exact_key = (title, url)
+        if exact_key in seen_exact:
+            continue
+        seen_exact.add(exact_key)
+
+        norm_url = _normalize_url(url)
+        norm_title = _normalize_title(title)
+        category = _extract_category(title)
+        sev_rank = SEV_RANK.get(f.get("severity", "INFO").upper(), 4)
+
+        if category:
+            # Group by (category, normalized_url)
+            cat_key = (category, norm_url)
+            if cat_key in category_url_map:
+                existing_f, existing_rank = category_url_map[cat_key]
+                if sev_rank < existing_rank:
+                    # Higher severity — replace
+                    deduped[deduped.index(existing_f)] = f
+                    category_url_map[cat_key] = (f, sev_rank)
+                continue
+            category_url_map[cat_key] = (f, sev_rank)
+        else:
+            # No category — use normalized title + url
+            title_key = (norm_title, norm_url)
+            if title_key in title_map:
+                existing_f, existing_rank = title_map[title_key]
+                if sev_rank < existing_rank:
+                    deduped[deduped.index(existing_f)] = f
+                    title_map[title_key] = (f, sev_rank)
+                continue
+            # Also check substring overlap with existing uncategorized
+            skip = False
+            for (et, eu), (ef, er) in list(title_map.items()):
+                if norm_url == eu or not norm_url or not eu:
+                    if len(norm_title) > 5 and len(et) > 5:
+                        if norm_title in et or et in norm_title:
+                            skip = True
+                            break
+            if skip:
+                continue
+            title_map[title_key] = (f, sev_rank)
+
+        deduped.append(f)
+
     all_findings = deduped
 
     # ── Counts ────────────────────────────────────────────────────────
