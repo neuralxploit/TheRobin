@@ -225,7 +225,11 @@ while True:
 
         # Patterns that look like findings but are actually noise/summaries
         _JUNK_PATTERNS = [
+            r'findings?\s*:\s*\d+',     # "findings : 4", "finding(s): 0"
             r'\d+\s*finding',           # "76 finding(s)", "2 finding(s)"
+            r'found on \d+ \w+',        # "SSTI found on 4 parameter(s)!"
+            r'\d+ potential\b',         # "81 potential DOM XSS..."
+            r'chains? found',           # "81 ... chains found"
             r'summary',                  # summary lines
             r'^\s*#',                    # markdown headings
             r'tested\b.*\bsecret',       # "tested 30 secrets"
@@ -237,6 +241,7 @@ while True:
             r'^\s*Checking\b',          # "Checking endpoint..." status
             r'stored\s+\d+',            # "Stored 5 JWTs in _G"
             r'skipping',                # "skipping deep JWT testing"
+            r'investigate manually',    # not confirmed findings
         ]
 
         for _line in _stdout_text.split('\n'):

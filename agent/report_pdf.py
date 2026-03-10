@@ -1264,9 +1264,16 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
     # ── Filter out junk / summary lines that got captured as findings ──
     import re as _re
     _JUNK_RE = _re.compile(
-        r'(\d+\s*finding|\bsummary\b|\btested\b|\bskipping\b|\bdone\b'
+        r'(findings?\s*:\s*\d+'              # "findings : 4", "finding(s): 0"
+        r'|\d+\s*finding'                     # "76 finding(s)", "2 findings"
+        r'|\bfound on \d+ \w+'               # "SSTI found on 4 parameter(s)!"
+        r'|\d+ potential\b'                   # "81 potential DOM XSS source→sink chains"
+        r'|\bsummary\b|\btested\b|\bskipping\b|\bdone\b'
         r'|\bgood\b|\brejected\b|\bnot vulnerable\b|\bno\s+(issues|vulns?|findings?)\b'
-        r'|\bphase\s+\d+\b|\bstored\s+\d+|\bchecked\b)',
+        r'|\bphase\s+\d+\b|\bstored\s+\d+|\bchecked\b'
+        r'|\bchains? found\b'                # "81 ... chains found"
+        r'|\binvestigate manually\b'          # "investigate manually" — not a confirmed finding
+        r')',
         _re.IGNORECASE,
     )
     all_findings = [
@@ -1276,31 +1283,69 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
     ]
 
     # ── Smart deduplication ────────────────────────────────────────────
-    # Vuln category keywords — findings with same category + same endpoint = same finding
     _VULN_CATEGORIES = {
-        'idor': 'IDOR', 'horizontal idor': 'IDOR', 'vertical idor': 'IDOR',
+        # IDOR — split into sub-categories for better grouping
+        'horizontal idor': 'Horizontal IDOR',
+        'vertical idor': 'Vertical IDOR',
+        'unauthenticated api': 'Unauthenticated API Access',
+        'unauthenticated access': 'Unauthenticated API Access',
+        'idor': 'IDOR', 'api idor': 'Unauthenticated API Access',
         'privilege escalation': 'Privilege Escalation', 'privesc': 'Privilege Escalation',
-        'mass assignment': 'Mass Assignment',
-        'xss': 'XSS', 'cross-site scripting': 'XSS', 'stored xss': 'XSS', 'reflected xss': 'XSS',
+        'mass assignment': 'Mass Assignment', 'mass-assignment': 'Mass Assignment',
+        'stored xss': 'Stored XSS', 'reflected xss': 'Reflected XSS',
+        'dom xss': 'DOM XSS', 'dom sink': 'DOM XSS',
+        'xss': 'XSS', 'cross-site scripting': 'XSS',
         'sqli': 'SQLi', 'sql injection': 'SQLi',
         'csrf': 'CSRF', 'cross-site request forgery': 'CSRF',
         'ssrf': 'SSRF', 'server-side request forgery': 'SSRF',
+        'ssti': 'SSTI', 'template injection': 'SSTI',
         'jwt': 'JWT', 'json web token': 'JWT',
         'workflow bypass': 'Workflow Bypass', 'workflow-bypass': 'Workflow Bypass',
         'step accessible': 'Workflow Bypass', 'accessible directly': 'Workflow Bypass',
+        'checkout': 'Workflow Bypass',
         'business logic': 'Business Logic',
         'command injection': 'Command Injection', 'cmdi': 'Command Injection',
         'xxe': 'XXE', 'xml external entity': 'XXE',
-        'file upload': 'File Upload', 'upload': 'File Upload',
+        'file upload': 'File Upload',
         'path traversal': 'Path Traversal', 'directory traversal': 'Path Traversal',
         'open redirect': 'Open Redirect',
-        'cors': 'CORS', 'misconfiguration': 'Misconfiguration',
+        'cors': 'CORS',
+        'default credentials': 'Default Credentials',
+        'account lockout': 'Account Lockout', 'no account lockout': 'Account Lockout',
+        'password policy': 'Password Policy', 'weak password': 'Password Policy',
+        'account enumeration': 'Account Enumeration',
+        'database error': 'Database Error Disclosure',
+        'information disclosure': 'Information Disclosure',
+        'rate limit': 'Rate Limiting', 'no-rate-limit': 'Rate Limiting',
+        'no rate limit': 'Rate Limiting',
+        'api-docs': 'API Docs Exposed', 'api docs': 'API Docs Exposed',
+        'swagger': 'API Docs Exposed', 'openapi': 'API Docs Exposed',
+        'excessive data': 'Excessive Data Exposure',
+        'prototype pollution': 'Prototype Pollution',
+        'request smuggling': 'HTTP Smuggling', 'cl+te': 'HTTP Smuggling', 'smuggling': 'HTTP Smuggling',
+        'method override': 'HTTP Method Override',
+        'system user disclosed': 'Information Disclosure',
+        'disallowed path': 'Robots Disallowed Path',
+        'prometheus': 'Metrics Exposed', 'metrics accessible': 'Metrics Exposed',
+        'hardcoded': 'Hardcoded Secrets',
+    }
+
+    # Categories where ALL findings should collapse to ONE regardless of URL
+    # (e.g., "Vertical IDOR on /admin" and "Vertical IDOR on /debug" = ONE finding)
+    _COLLAPSE_ALL = {
+        'Vertical IDOR', 'Unauthenticated API Access', 'Workflow Bypass', 'Rate Limiting', 'Account Lockout',
+        'Password Policy', 'Account Enumeration', 'API Docs Exposed',
+        'Default Credentials', 'Database Error Disclosure', 'Information Disclosure',
+        'DOM XSS', 'Prototype Pollution', 'HTTP Smuggling', 'HTTP Method Override',
+        'Metrics Exposed', 'Hardcoded Secrets', 'SSTI', 'Mass Assignment',
+        'Excessive Data Exposure', 'Business Logic', 'Robots Disallowed Path',
     }
 
     def _extract_category(title):
         """Extract vulnerability category from title for grouping."""
         t = title.lower()
-        for keyword, cat in _VULN_CATEGORIES.items():
+        # Check longer keywords first (more specific matches)
+        for keyword, cat in sorted(_VULN_CATEGORIES.items(), key=lambda x: -len(x[0])):
             if keyword in t:
                 return cat
         return None
@@ -1309,7 +1354,6 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
         """Normalize URL: strip query, collapse numeric segments."""
         u = _re.sub(r'[?#].*$', '', (url or "")).rstrip("/").lower()
         u = _re.sub(r'/\d+', '/N', u)
-        # Strip fragment (Angular routes like /#/checkout)
         u = _re.sub(r'/#/', '/', u)
         return u
 
@@ -1319,12 +1363,18 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
         t = _re.sub(r'^\[?(critical|high|medium|low|info)\]?\s*[:\-—]*\s*', '', t)
         t = _re.sub(r'[\s\-—:]+', ' ', t).strip()
         t = _re.sub(r'https?://\S+', '', t).strip()
+        # Strip fuzz/payload details: "(fuzz=...)", "field=...", "param=..."
+        t = _re.sub(r'\(fuzz[^)]*\)', '', t).strip()
+        t = _re.sub(r'field=\S+', '', t).strip()
+        t = _re.sub(r'param=\S+', '', t).strip()
         return t
 
     seen_exact = set()
-    # category_url_map: (category, normalized_url) → best finding
+    # For COLLAPSE_ALL categories: (category) → (best_finding, sev_rank, count, urls)
+    collapse_map = {}
+    # For per-URL categories: (category, normalized_url) → (best_finding, sev_rank)
     category_url_map = {}
-    # For findings without a category, use normalized title
+    # For uncategorized: (norm_title, norm_url) → (finding, sev_rank)
     title_map = {}
     deduped = []
 
@@ -1344,16 +1394,29 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
         sev_rank = SEV_RANK.get(f.get("severity", "INFO").upper(), 4)
 
         if category:
-            # Group by (category, normalized_url)
-            cat_key = (category, norm_url)
-            if cat_key in category_url_map:
-                existing_f, existing_rank = category_url_map[cat_key]
-                if sev_rank < existing_rank:
-                    # Higher severity — replace
-                    deduped[deduped.index(existing_f)] = f
-                    category_url_map[cat_key] = (f, sev_rank)
-                continue
-            category_url_map[cat_key] = (f, sev_rank)
+            if category in _COLLAPSE_ALL:
+                # ALL findings in this category → ONE entry
+                if category in collapse_map:
+                    existing_f, existing_rank, count, urls = collapse_map[category]
+                    urls.add(norm_url)
+                    if sev_rank < existing_rank:
+                        idx = deduped.index(existing_f)
+                        deduped[idx] = f
+                        collapse_map[category] = (f, sev_rank, count + 1, urls)
+                    else:
+                        collapse_map[category] = (existing_f, existing_rank, count + 1, urls)
+                    continue
+                collapse_map[category] = (f, sev_rank, 1, {norm_url})
+            else:
+                # Group by (category, normalized_url)
+                cat_key = (category, norm_url)
+                if cat_key in category_url_map:
+                    existing_f, existing_rank = category_url_map[cat_key]
+                    if sev_rank < existing_rank:
+                        deduped[deduped.index(existing_f)] = f
+                        category_url_map[cat_key] = (f, sev_rank)
+                    continue
+                category_url_map[cat_key] = (f, sev_rank)
         else:
             # No category — use normalized title + url
             title_key = (norm_title, norm_url)
@@ -1363,7 +1426,7 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
                     deduped[deduped.index(existing_f)] = f
                     title_map[title_key] = (f, sev_rank)
                 continue
-            # Also check substring overlap with existing uncategorized
+            # Substring overlap check
             skip = False
             for (et, eu), (ef, er) in list(title_map.items()):
                 if norm_url == eu or not norm_url or not eu:
@@ -1376,6 +1439,15 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
             title_map[title_key] = (f, sev_rank)
 
         deduped.append(f)
+
+    # Post-process: annotate collapsed findings with affected endpoint count
+    for category, (best_f, _, count, urls) in collapse_map.items():
+        if count > 1:
+            real_urls = {u for u in urls if u}
+            if real_urls:
+                best_f["title"] = f"{best_f['title']} (+{count - 1} more endpoints)"
+            else:
+                best_f["title"] = f"{best_f['title']} ({count} instances)"
 
     all_findings = deduped
 
