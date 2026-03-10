@@ -58,6 +58,7 @@ warnings.filterwarnings("ignore")
 # Pre-load everything the agent commonly uses.
 # These are in globals so agent code can use them without importing.
 import re, base64, hashlib, socket, ssl, time
+_re = re  # alias for LLM convenience
 from urllib.parse import urljoin, urlparse, urlencode, quote, unquote, parse_qs
 
 # Add project root to path so agent modules are importable (e.g. report_gen)
@@ -337,7 +338,7 @@ class _PersistentREPL:
         if self._proc is None or self._proc.poll() is not None:
             self._start()
 
-    def execute(self, code: str, timeout: int = 120) -> dict:
+    def execute(self, code: str, timeout: int = 300) -> dict:
         with self._lock:
             self._ensure_alive()
 

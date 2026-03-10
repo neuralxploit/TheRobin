@@ -278,6 +278,8 @@ Multi-step login support: LLM sees each step via screenshots.
 5. ALWAYS handle exceptions per-request
 6. Define variables BEFORE using them in loops
 7. PAYLOADS WITH MIXED QUOTES — ALWAYS use triple-quoted strings
+8. COPY-PASTE BETWEEN LOOPS — VERIFY variable names match the current loop
+9. int() ON UNTRUSTED INPUT — ALWAYS wrap in try/except ValueError
 
 ═══════════════════════════════════════════════════════
   ADAPTIVE PHASE SYSTEM — AUTONOMOUS TESTING
