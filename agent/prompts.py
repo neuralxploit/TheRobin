@@ -280,6 +280,7 @@ Multi-step login support: LLM sees each step via screenshots.
 7. PAYLOADS WITH MIXED QUOTES — ALWAYS use triple-quoted strings
 8. COPY-PASTE BETWEEN LOOPS — VERIFY variable names match the current loop
 9. int() ON UNTRUSTED INPUT — ALWAYS wrap in try/except ValueError
+10. Use .get('key') or {} not .get('key', {}) — handles both missing AND None values
 
 ═══════════════════════════════════════════════════════
   ADAPTIVE PHASE SYSTEM — AUTONOMOUS TESTING

@@ -456,6 +456,53 @@ Always follow these rules when writing Python test code:
    ✗ WRONG — causes SyntaxError when payload has both quote types:
      payloads = ["'><script>alert('XSS')</script>"]  # SyntaxError!
 
+8. COPY-PASTE BETWEEN LOOPS — VERIFY variable names match the current loop.
+   When copying code from one loop to another, check that loop variables are
+   updated for the new context:
+     # Loop 1 — iterating over parts
+     for part in parts:
+         ...
+
+     # Loop 2 — WRONG: copied code still references 'part'
+     for val in values:
+         if re.match(r'\d+', part):  # BUG: should be 'val' not 'part'
+             ...
+
+     # CORRECT: use the current loop variable
+     for val in values:
+         if re.match(r'\d+', val):
+             ...
+
+9. int() ON UNTRUSTED INPUT — ALWAYS wrap in try/except ValueError.
+   Never call int() directly on data from web pages, URLs, or user input:
+     # WRONG:
+         if int(part) > 0:  # crashes on '_Incapsula_Resource'
+
+     # CORRECT:
+         try:
+             if int(part) > 0:
+                 ...
+         except ValueError:
+             pass
+
+10. For optional dicts in _G, use .get('key') or {} not .get('key', {}).
+    The default argument only handles MISSING keys, not None values:
+     # WRONG: returns None if _G['x'] exists but is None
+         data = _G.get('creds_a', {})
+         data.get('username')  # crashes: None.get()
+
+     # CORRECT: handles both missing AND None
+         data = _G.get('creds_a') or {}
+         data.get('username')  # safe: always a dict
+
+11. Convert RequestsCookieJar with comprehension, not dict():
+    session.cookies is a RequestsCookieJar, not a plain dict:
+     # WRONG: can raise KeyError on cookies with domain=None
+         cookies = dict(session.cookies)
+
+     # CORRECT: explicitly extract name/value
+         cookies = {c.name: c.value for c in session.cookies}
+
 ═══════════════════════════════════════════════════════
   TEST METHODOLOGY (7 PHASES — IN ORDER)
 ═══════════════════════════════════════════════════════
