@@ -342,6 +342,16 @@ class _PersistentREPL:
         with self._lock:
             self._ensure_alive()
 
+            # Pre-execution syntax check — catches errors before running
+            try:
+                compile(code, "<agent>", "exec")
+            except SyntaxError as e:
+                # Return short error message (saves tokens vs full traceback)
+                error_msg = f"Syntax error line {e.lineno}: {e.msg}"
+                if e.text:
+                    error_msg += f"\n  {e.text.strip()}"
+                return {"stdout": "", "stderr": error_msg, "exit_code": 1}
+
             # Send: "{length}\n{code}"
             try:
                 self._proc.stdin.write(f"{len(code)}\n")

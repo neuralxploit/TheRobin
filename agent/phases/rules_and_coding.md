@@ -503,6 +503,21 @@ Always follow these rules when writing Python test code:
      # CORRECT: explicitly extract name/value
          cookies = {c.name: c.value for c in session.cookies}
 
+12. Check API response structure before slicing or iterating.
+    APIs often wrap responses in {"status": "...", "data": [...]}:
+     # WRONG: assumes response is a list
+         users = r.json()
+         print(users[:3])  # KeyError if response is a dict
+
+     # CORRECT: check structure first
+         resp = r.json()
+         if isinstance(resp, dict) and 'data' in resp:
+             users = resp['data']
+         elif isinstance(resp, list):
+             users = resp
+         else:
+             users = []
+
 ═══════════════════════════════════════════════════════
   TEST METHODOLOGY (7 PHASES — IN ORDER)
 ═══════════════════════════════════════════════════════

@@ -281,6 +281,8 @@ Multi-step login support: LLM sees each step via screenshots.
 8. COPY-PASTE BETWEEN LOOPS — VERIFY variable names match the current loop
 9. int() ON UNTRUSTED INPUT — ALWAYS wrap in try/except ValueError
 10. Use .get('key') or {} not .get('key', {}) — handles both missing AND None values
+11. Convert RequestsCookieJar with {c.name: c.value for c in session.cookies}, not dict()
+12. APIs often wrap responses in {"data": [...]}. Check structure before slicing/iterating
 
 ═══════════════════════════════════════════════════════
   ADAPTIVE PHASE SYSTEM — AUTONOMOUS TESTING
