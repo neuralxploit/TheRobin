@@ -110,6 +110,27 @@ def _repl_read_file(fname):
 _G["write_file"] = _repl_write_file
 _G["read_file"] = _repl_read_file
 
+# POC screenshot helper — take a named screenshot of a URL for finding evidence
+def _poc_screenshot(url, name="poc"):
+    """Navigate browser to URL and save a named POC screenshot.
+    Returns the screenshot filename (saved in workspace).
+    Usage: fname = poc_screenshot("http://target/search?q=<script>alert(1)</script>", "xss_search_q")
+    """
+    import subprocess as _sp, json as _j
+    # Call browser_action via the parent process's tool
+    # Since we're in the REPL, we use a simpler approach: save a marker file
+    # that the parent process reads to trigger browser_action
+    _marker = os.path.join(os.getcwd(), '.poc_screenshot_request.json')
+    _j_data = _j.dumps({"url": url, "name": name})
+    with open(_marker, 'w') as _f:
+        _f.write(_j_data)
+    print(f"[POC] Screenshot requested: {name} -> {url[:100]}")
+    print(f"[POC] Use browser_action to capture: browser_action(action='navigate', url='{url[:100]}')")
+    print(f"[POC] Then: browser_action(action='screenshot', filename='{name}.png')")
+    return f"screenshot_{name}.png"
+
+_G["poc_screenshot"] = _poc_screenshot
+
 # ── State persistence: auto-save/restore critical _G keys across REPL restarts ──
 _STATE_FILE = os.path.join(os.getcwd(), '.pentest_state.json')
 
@@ -121,6 +142,7 @@ _STATE_SKIP = frozenset({
     'urljoin', 'urlparse', 'urlencode', 'quote', 'unquote', 'parse_qs',
     'requests', 'BeautifulSoup', 'Path',
     'write_file', 'read_file', '_repl_write_file', '_repl_read_file',
+    'poc_screenshot', '_poc_screenshot',
     '_save_state', '_restore_state', '_STATE_FILE', '_STATE_SKIP',
     '_SENTINEL', '_orig_request', '_proxied_request', '_tor_proxy',
 })

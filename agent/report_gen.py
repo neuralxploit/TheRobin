@@ -476,7 +476,7 @@ def _build_detailed_findings(findings) -> str:
         poc = f.get("poc", detail.get("poc", ""))
         request = f.get("request", detail.get("request", ""))
         response = f.get("response", detail.get("response", ""))
-        screenshot = _esc(f.get("screenshot", detail.get("screenshot", "")))
+        screenshot_name = f.get("screenshot", detail.get("screenshot", ""))
         impact = _esc(f.get("impact", detail.get("impact", "")))
         remediation = f.get("remediation", detail.get("remediation", ""))
 
@@ -489,7 +489,29 @@ def _build_detailed_findings(findings) -> str:
         poc_html = f"<pre>{_esc(poc)}</pre>" if poc else ""
         request_html = f"<h4>Request Sent</h4><pre>{_esc(request)}</pre>" if request else ""
         response_html = f"<h4>Server Response</h4><pre>{_esc(response[:2000])}</pre>" if response else ""
-        screenshot_html = f"<p><strong>Screenshot:</strong> <code>{screenshot}</code></p>" if screenshot else ""
+        # Embed screenshot as base64 image if file exists, otherwise show filename
+        screenshot_html = ""
+        if screenshot_name:
+            from pathlib import Path as _P
+            import base64 as _b64
+            # Try workspace directory first, then current directory
+            for _sdir in [Path("workspace"), Path(".")]:
+                _spath = _sdir / screenshot_name
+                if _spath.exists():
+                    try:
+                        _sdata = _b64.b64encode(_spath.read_bytes()).decode()
+                        screenshot_html = (
+                            f'<h4>POC Screenshot</h4>'
+                            f'<p><code>{_esc(screenshot_name)}</code></p>'
+                            f'<img src="data:image/png;base64,{_sdata}" '
+                            f'style="max-width:100%;border:1px solid #ccc;border-radius:4px;margin:8px 0" '
+                            f'alt="POC: {_esc(screenshot_name)}">'
+                        )
+                    except Exception:
+                        screenshot_html = f"<p><strong>Screenshot:</strong> <code>{_esc(screenshot_name)}</code></p>"
+                    break
+            else:
+                screenshot_html = f"<p><strong>Screenshot:</strong> <code>{_esc(screenshot_name)}</code> (file not found)</p>"
         impact_html = f"<p>{impact}</p>" if impact else ""
         remediation_html = f"<pre>{_esc(remediation)}</pre>" if remediation else "<p><em>See remediation roadmap in Section 7.</em></p>"
 

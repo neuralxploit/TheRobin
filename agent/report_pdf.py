@@ -895,6 +895,41 @@ def _build_detailed_findings(findings, styles):
                 styles["CodeBlock"]
             ))
 
+        # ── POC Screenshot ─────────────────────────────────────────────
+        screenshot_name = f.get("screenshot", detail.get("screenshot", ""))
+        if screenshot_name:
+            _shot_path = None
+            for _sdir in [Path("workspace"), Path(".")]:
+                _sp = _sdir / screenshot_name
+                if _sp.exists():
+                    _shot_path = _sp
+                    break
+            if _shot_path:
+                try:
+                    from reportlab.platypus import Image as RLImage
+                    card_elements.append(Spacer(1, 3 * mm))
+                    card_elements.append(Paragraph(
+                        "<b>POC Screenshot</b>",
+                        ParagraphStyle("poc_shot_label", parent=styles["FieldLabel"],
+                                       spaceBefore=4, spaceAfter=2,
+                                       textColor=HexColor("#444444")),
+                    ))
+                    card_elements.append(Spacer(1, 1 * mm))
+                    # Scale image to fit page width (max ~160mm)
+                    _img = RLImage(str(_shot_path), width=160 * mm, height=100 * mm,
+                                   kind='proportional')
+                    _img.hAlign = 'LEFT'
+                    card_elements.append(_img)
+                    card_elements.append(Paragraph(
+                        f"<font size=7 color='#888888'>{_xml_safe(screenshot_name)}</font>",
+                        styles["SmallText"],
+                    ))
+                except Exception:
+                    card_elements.append(Paragraph(
+                        f"Screenshot: {_xml_safe(screenshot_name)} (embed failed)",
+                        styles["SmallText"],
+                    ))
+
         card_elements.append(Spacer(1, 5 * mm))
 
         # ── Separator line before mitigation ──────────────────────────
