@@ -111,20 +111,45 @@ _G["read_file"] = _repl_read_file
 
 # ── State persistence: auto-save/restore critical _G keys across REPL restarts ──
 _STATE_FILE = os.path.join(os.getcwd(), '.pentest_state.json')
-_STATE_KEYS = ['BASE', 'target', 'SCOPE', 'IS_SPA', 'creds_a', 'creds_b',
-               'api_login_url', 'api_login_fields', 'OBJECT_MAP',
-               'JWT_TOKENS', 'AUTH_HEADER']
+
+# Keys to SKIP — these are builtins, modules, functions, or internal REPL plumbing
+_STATE_SKIP = frozenset({
+    '__builtins__', '__name__', '__doc__', '__package__', '__loader__',
+    '__spec__', '__file__', '_G', 'json', 'sys', 'io', 'traceback', 'os',
+    'warnings', 're', 'base64', 'hashlib', 'socket', 'ssl', 'time',
+    'urljoin', 'urlparse', 'urlencode', 'quote', 'unquote', 'parse_qs',
+    'requests', 'BeautifulSoup', 'Path',
+    'write_file', 'read_file', '_repl_write_file', '_repl_read_file',
+    '_save_state', '_restore_state', '_STATE_FILE', '_STATE_SKIP',
+    '_SENTINEL', '_orig_request', '_proxied_request', '_tor_proxy',
+})
 
 def _save_state():
-    """Persist serializable _G keys to disk so REPL restart recovers them."""
+    """Persist ALL serializable _G keys to disk so REPL restart recovers them."""
     try:
         state = {}
-        for k in _STATE_KEYS:
-            if k in _G:
-                v = _G[k]
-                # Only save JSON-serializable values
+        for k, v in _G.items():
+            if k.startswith('_') and k not in (
+                '_G',  # skip internal
+            ):
+                # Save underscore keys only if they look like test data
+                # (e.g. _cookie_xss_found), skip internal plumbing
+                if k.startswith('__') or callable(v):
+                    continue
+            if k in _STATE_SKIP or callable(v):
+                continue
+            # Skip module / class / function objects
+            if hasattr(v, '__module__') and not isinstance(v, (dict, list, tuple, str, int, float, bool, type(None))):
+                continue
+            try:
+                # Convert sets to lists for JSON serialization
+                if isinstance(v, set):
+                    v = list(v)
                 json.dumps(v)  # test serialization
                 state[k] = v
+            except (TypeError, ValueError, OverflowError):
+                # Not serializable (sessions, sockets, compiled regex, etc.) — skip
+                continue
         if state:
             with open(_STATE_FILE, 'w') as f:
                 json.dump(state, f)
@@ -137,17 +162,28 @@ def _restore_state():
         if os.path.exists(_STATE_FILE):
             with open(_STATE_FILE) as f:
                 state = json.load(f)
+            restored = []
             for k, v in state.items():
                 if k not in _G:  # don't overwrite if already set
-                    _G[k] = v
+                    # Convert lists back to sets for known set-typed keys
+                    if k in ('ALL_LINKS', 'API_ENDPOINTS') and isinstance(v, list):
+                        _G[k] = set(v)
+                    else:
+                        _G[k] = v
+                    restored.append(k)
             # Recreate a basic requests.Session if BASE is restored
             if 'BASE' in state and 'session' not in _G:
                 _s = requests.Session()
                 _s.verify = False
                 _s.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0'
                 _G['session'] = _s
-                print(f'[REPL] State restored: BASE={state["BASE"]}')
-                print(f'[REPL] WARNING: session cookies/auth lost — re-login may be needed')
+                _G['session_a'] = _s
+            if restored:
+                print(f'[REPL] State restored ({len(restored)} keys): {", ".join(sorted(restored)[:15])}')
+                if 'BASE' in state:
+                    print(f'[REPL] BASE={state["BASE"]}')
+                if 'session' not in state:
+                    print(f'[REPL] WARNING: session cookies/auth lost — re-login may be needed')
     except Exception:
         pass
 
