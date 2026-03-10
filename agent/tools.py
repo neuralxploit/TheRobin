@@ -109,6 +109,50 @@ def _repl_read_file(fname):
 _G["write_file"] = _repl_write_file
 _G["read_file"] = _repl_read_file
 
+# ── State persistence: auto-save/restore critical _G keys across REPL restarts ──
+_STATE_FILE = os.path.join(os.getcwd(), '.pentest_state.json')
+_STATE_KEYS = ['BASE', 'target', 'SCOPE', 'IS_SPA', 'creds_a', 'creds_b',
+               'api_login_url', 'api_login_fields', 'OBJECT_MAP',
+               'JWT_TOKENS', 'AUTH_HEADER']
+
+def _save_state():
+    """Persist serializable _G keys to disk so REPL restart recovers them."""
+    try:
+        state = {}
+        for k in _STATE_KEYS:
+            if k in _G:
+                v = _G[k]
+                # Only save JSON-serializable values
+                json.dumps(v)  # test serialization
+                state[k] = v
+        if state:
+            with open(_STATE_FILE, 'w') as f:
+                json.dump(state, f)
+    except Exception:
+        pass
+
+def _restore_state():
+    """Load saved state into _G on REPL restart. Also recreates requests.Session."""
+    try:
+        if os.path.exists(_STATE_FILE):
+            with open(_STATE_FILE) as f:
+                state = json.load(f)
+            for k, v in state.items():
+                if k not in _G:  # don't overwrite if already set
+                    _G[k] = v
+            # Recreate a basic requests.Session if BASE is restored
+            if 'BASE' in state and 'session' not in _G:
+                _s = requests.Session()
+                _s.verify = False
+                _s.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0'
+                _G['session'] = _s
+                print(f'[REPL] State restored: BASE={state["BASE"]}')
+                print(f'[REPL] WARNING: session cookies/auth lost — re-login may be needed')
+    except Exception:
+        pass
+
+_restore_state()
+
 while True:
     try:
         header = sys.stdin.readline()
@@ -200,6 +244,9 @@ while True:
                     'auto_captured': True,
                 })
                 _existing_titles.add(_title)
+
+        # Auto-save critical state after every execution
+        _save_state()
 
         result = json.dumps({"stdout": _stdout_text, "stderr": _err.getvalue()})
         sys.stdout.write(result + "\n")
