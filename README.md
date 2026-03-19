@@ -45,7 +45,7 @@ The agent operates through a persistent Python REPL — writing and executing co
 | 🌐 | **Full Web Testing** | SQLi, XSS, CSRF, IDOR, SSRF, CRLF, command injection, deserialization, and more |
 | 🔐 | **2FA / Cookie Auth** | Paste a session cookie for targets with complex authentication |
 | 🧅 | **Tor Routing** | Route all agent traffic through Tor with one flag |
-| 📊 | **Professional Reports** | Markdown reports with CVSS v3.1 scores, reproducible curl PoCs, and remediation |
+| 📊 | **Professional Reports** | PDF, HTML, JSON, and XML reports with CVSS v3.1, ZDL risk matrix, OWASP classification, reproducible curl PoCs, and remediation |
 | ✅ | **Zero False Positives** | Strict confirmation logic — every finding is screenshot-verified and confirmed, not just observed |
 | 🖥️ | **Rich TUI** | Color-coded terminal interface with real-time tool output and phase tracking |
 
@@ -116,6 +116,19 @@ Every vulnerability finding goes through a strict evidence pipeline before it re
 **False positive elimination:** The AI opens each finding URL in the browser and screenshots it. If the screenshot shows a 404, error page, or WAF block instead of the claimed vulnerability, the finding is automatically removed. No more phantom findings.
 
 > **Note:** Screenshot verification requires a vision-capable model. Non-vision models still produce reports with test scripts, server responses, and curl PoCs but skip visual confirmation.
+
+### Report Output Formats
+
+Every scan automatically generates **4 report formats** in the session workspace:
+
+| Format | File | Use Case |
+|--------|------|----------|
+| **PDF** | `report.pdf` | Client delivery — professional ZDL format with risk matrix, CVSS scoring, remediation steps |
+| **HTML** | `report.html` | Interactive browser viewing with expandable findings and syntax-highlighted PoCs |
+| **JSON** | `report.json` | Integration with DefectDojo, Jira, CI/CD pipelines, custom tooling |
+| **XML** | `report.xml` | Compliance tools, SIEM import, enterprise reporting systems |
+
+All four formats contain identical data: professional finding titles, CVSS v3.1 with vector strings, OWASP Top 10 classification, ZDL risk matrix (likelihood x severity), proof of concept with request/response, and remediation steps with CWE/OWASP references.
 
 ---
 
