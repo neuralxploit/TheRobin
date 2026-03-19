@@ -20,9 +20,26 @@ import re
 import time
 from pathlib import Path
 from typing import Callable
-from .ollama import simple_chat, stream_chat, ContextOverflowError, _estimate_tokens
+from .ollama import simple_chat as _ollama_simple, stream_chat as _ollama_stream, ContextOverflowError, _estimate_tokens
 from .tools import TOOL_SCHEMAS, execute_tool
 from .prompts import get_system_prompt
+
+# ── LLM backend routing ────────────────────────────────────────────────────
+# If model starts with "claude", route to Claude API; otherwise use Ollama.
+def _is_claude(model: str) -> bool:
+    return model and model.lower().startswith("claude")
+
+def stream_chat(model, messages, tools, on_token=None):
+    if _is_claude(model):
+        from .claude_api import stream_chat as _claude_stream
+        return _claude_stream(model, messages, tools, on_token=on_token)
+    return _ollama_stream(model, messages, tools, on_token=on_token)
+
+def simple_chat(model, messages, tools):
+    if _is_claude(model):
+        from .claude_api import simple_chat as _claude_simple
+        return _claude_simple(model, messages, tools)
+    return _ollama_simple(model, messages, tools)
 
 
 def _next_uncompleted_phase(workspace_dir) -> str | None:

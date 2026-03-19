@@ -89,14 +89,27 @@ class App:
         """Main application entry point."""
         session_dir = self._setup_workspace()
 
-        # Detect Ollama models
-        models = list_models()
+        # Check if user specified a Claude model — skip Ollama detection
+        is_claude = (
+            self.session.get("MODEL", "").lower().startswith("claude")
+            or (self.model_override or "").lower().startswith("claude")
+        )
+
+        # Detect Ollama models (skip if using Claude)
+        models = list_models() if not is_claude else []
 
         if self.session["MODEL"]:
             self.model = self.session["MODEL"]
+        elif is_claude:
+            self.model = self.model_override or "claude-sonnet-4-20250514"
+            self.session["MODEL"] = self.model
         else:
             self.model = pick_default_model(models)
             self.session["MODEL"] = self.model or ""
+
+        # For Claude models, add to the models list for banner display
+        if is_claude:
+            models = [self.model] + models
 
         # Print banner
         self.ui.print_banner(models, self.model or "none")
@@ -104,6 +117,15 @@ class App:
         if not self.model:
             self.ui.print_system("No Ollama model available. Start Ollama first.")
             return
+
+        if is_claude:
+            import os
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                self.ui.print_system(
+                    "⚠ ANTHROPIC_API_KEY not set. Export it before running:\n"
+                    "  export ANTHROPIC_API_KEY=sk-ant-..."
+                )
+                return
 
         # ── Metasploit-style setup phase ──────────────────────────────────────
         # Always show the options table and let the user configure before running
