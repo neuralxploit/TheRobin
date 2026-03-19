@@ -72,6 +72,12 @@ for sev in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'):
 pdf_path = generate_pdf_report(_G, output_path='report.pdf')
 print(f"\n[OK] Professional PDF report saved to: {pdf_path}")
 print("     Ready for client delivery.")
+
+from agent.report_export import generate_json_report, generate_xml_report
+json_path = generate_json_report(_G, output_path='report.json')
+print(f"[OK] JSON report saved to: {json_path}")
+xml_path = generate_xml_report(_G, output_path='report.xml')
+print(f"[OK] XML report saved to: {xml_path}")
 ```
 
 If _G['FINDINGS'] is empty, you FORGOT to store findings during testing.
