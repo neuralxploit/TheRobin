@@ -19,7 +19,7 @@
 
 **Autonomous AI-driven penetration testing framework powered by LLMs.**
 <br>
-TheRobin executes a full 26-phase web application security assessment autonomously —
+TheRobin executes a full 29-phase web application security assessment autonomously —
 <br>
 from reconnaissance to report generation — using an AI agent that writes, executes, and iterates on its own attack code.
 
@@ -33,7 +33,7 @@ from reconnaissance to report generation — using an AI agent that writes, exec
 
 TheRobin is an offensive security tool that uses Large Language Models via [Ollama](https://ollama.com) to conduct autonomous penetration tests against web applications. Unlike traditional scanners that rely on signature matching, TheRobin's AI agent **reasons about responses**, **adapts its attack strategy**, and **confirms vulnerabilities** before reporting them.
 
-The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 26-phase methodology but adapts dynamically based on what it discovers.
+The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 29-phase methodology but adapts dynamically based on what it discovers.
 
 ### Key Capabilities
 
@@ -57,7 +57,7 @@ TheRobin works with both **local models** (data never leaves your machine) and *
 
 ## Testing Methodology
 
-TheRobin follows a structured 26-phase approach — each vulnerability type gets its own dedicated phase:
+TheRobin follows a structured 29-phase approach — each vulnerability type gets its own dedicated phase:
 
 ```
  Phase  1 │ Recon & Crawl          → Unauthenticated spider, tech stack, directory bruteforce
@@ -85,7 +85,10 @@ TheRobin follows a structured 26-phase approach — each vulnerability type gets
  Phase 23 │ XXE & Path Traversal   → XML external entities, LFI/directory traversal
  Phase 24 │ API Security           → Endpoint enumeration, auth bypass, mass assignment
  Phase 25 │ Race Conditions        → TOCTOU, concurrent request exploitation
- Phase 26 │ Reporting              → Aggregated findings, curl PoCs, CVSS, screenshots
+ Phase 26 │ Sensitive Files        → Config files, backup files, exposed directories
+ Phase 27 │ Account Security       → Account enumeration, password policy, lockout testing
+ Phase 28 │ Error Handling         → Error disclosure, stack traces, debug information
+ Phase 29 │ Reporting              → Aggregated findings, curl PoCs, CVSS, PDF report
 ```
 
 Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands.
@@ -153,7 +156,7 @@ ollama pull glm-4.7:cloud
 **Cloud-proxied** (via Ollama infrastructure — data sent to provider):
 | Model | Vision | Notes |
 |-------|--------|-------|
-| `glm-4.7:cloud` | ❌ | **Recommended** — 128K context, best tool calling, follows all 26 phases reliably |
+| `glm-4.7:cloud` | ❌ | **Recommended** — 128K context, best tool calling, follows all 29 phases reliably |
 | `glm-5:cloud` | ❌ | Coding-specialized, strong tool calling |
 | `kimi-k2.5:cloud` | ✅ | Vision + tools, but poor phase adherence — not recommended |
 | `kimi-k2:1t-cloud` | ❌ | Strong reasoning, large context |
