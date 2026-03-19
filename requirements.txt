@@ -17,3 +17,6 @@ selenium>=4.20.0
 
 # Vulnerable test app
 flask>=3.0.0
+
+# PDF report generation
+reportlab>=4.0.0

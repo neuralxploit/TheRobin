@@ -266,7 +266,8 @@ while True:
             r'investigate manually',    # not confirmed findings
         ]
 
-        for _line in _stdout_text.split('\n'):
+        _stdout_lines = _stdout_text.split('\n')
+        for _li, _line in enumerate(_stdout_lines):
             _m = _re.match(
                 r'\s*\[?(CRITICAL|HIGH|MEDIUM|LOW)\]?\s*[—\-:\s]+(.+)',
                 _line.strip()
@@ -300,14 +301,93 @@ while True:
                 if _title.lower() in _et.lower() or _et.lower() in _title.lower():
                     _dominated = True
                     break
-            if not _dominated:
-                _findings.append({
-                    'severity': _sev,
-                    'title': _title,
-                    'url': _url,
-                    'auto_captured': True,
-                })
-                _existing_titles.add(_title)
+            if _dominated:
+                continue
+
+            # ── Scan surrounding lines for labelled POC fields ──────────────
+            # Look up to 30 lines after the severity line for structured output
+            _poc_fields = {
+                'url': _url, 'method': '', 'payload': '',
+                'evidence': '', 'poc': '', 'request': '',
+                'response': '', 'impact': '', 'remediation': '',
+            }
+            _scan_end = min(_li + 31, len(_stdout_lines))
+            _evidence_buf = []
+            _poc_buf = []
+            _response_buf = []
+            _in_evidence = False
+            _in_poc = False
+            _in_response = False
+            for _sl in _stdout_lines[_li + 1:_scan_end]:
+                _sl_strip = _sl.strip()
+                # Stop at next severity line or empty-line after block ends
+                if _re.match(r'\s*\[?(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]', _sl):
+                    break
+                # Multi-line block labels
+                if _re.match(r'Evidence\s*:', _sl_strip, _re.IGNORECASE):
+                    _in_evidence, _in_poc, _in_response = True, False, False
+                    _val = _re.sub(r'^Evidence\s*:\s*', '', _sl_strip, flags=_re.IGNORECASE)
+                    if _val:
+                        _evidence_buf.append(_val)
+                    continue
+                if _re.match(r'curl\s+POC\s*:|POC\s*:', _sl_strip, _re.IGNORECASE):
+                    _in_evidence, _in_poc, _in_response = False, True, False
+                    _val = _re.sub(r'^(?:curl\s+)?POC\s*:\s*', '', _sl_strip, flags=_re.IGNORECASE)
+                    if _val:
+                        _poc_buf.append(_val)
+                    continue
+                if _re.match(r'Response\s*:|Server\s+Response\s*:', _sl_strip, _re.IGNORECASE):
+                    _in_evidence, _in_poc, _in_response = False, False, True
+                    _val = _re.sub(r'^(?:Server\s+)?Response\s*:\s*', '', _sl_strip, flags=_re.IGNORECASE)
+                    if _val:
+                        _response_buf.append(_val)
+                    continue
+                # Single-line labels (end multi-line blocks)
+                _kv = _re.match(r'(URL|Method|Payload|Parameter|Impact|Remediation)\s*:\s*(.+)', _sl_strip, _re.IGNORECASE)
+                if _kv:
+                    _in_evidence = _in_poc = _in_response = False
+                    _k, _v = _kv.group(1).lower(), _kv.group(2).strip()
+                    if _k == 'url' and not _poc_fields['url']:
+                        _poc_fields['url'] = _v
+                    elif _k == 'method':
+                        _poc_fields['method'] = _v
+                    elif _k in ('payload', 'parameter'):
+                        _poc_fields['payload'] = _v
+                    elif _k == 'impact':
+                        _poc_fields['impact'] = _v
+                    elif _k == 'remediation':
+                        _poc_fields['remediation'] = _v
+                    continue
+                # Continuation lines for multi-line blocks
+                if _in_evidence:
+                    _evidence_buf.append(_sl)
+                elif _in_poc:
+                    _poc_buf.append(_sl)
+                elif _in_response:
+                    _response_buf.append(_sl)
+
+            if _evidence_buf:
+                _poc_fields['evidence'] = '\n'.join(_evidence_buf)
+            if _poc_buf:
+                _poc_fields['poc'] = '\n'.join(_poc_buf)
+            if _response_buf:
+                _poc_fields['response'] = '\n'.join(_response_buf)
+            # ────────────────────────────────────────────────────────────────
+
+            _findings.append({
+                'severity': _sev,
+                'title': _title,
+                'url': _poc_fields['url'],
+                'method': _poc_fields['method'],
+                'payload': _poc_fields['payload'],
+                'evidence': _poc_fields['evidence'],
+                'poc': _poc_fields['poc'],
+                'response': _poc_fields['response'],
+                'impact': _poc_fields['impact'],
+                'remediation': _poc_fields['remediation'],
+                'auto_captured': True,
+            })
+            _existing_titles.add(_title)
 
         # Auto-save critical state after every execution
         _save_state()

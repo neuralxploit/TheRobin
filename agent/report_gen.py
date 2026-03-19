@@ -485,10 +485,13 @@ def _build_detailed_findings(findings) -> str:
         if isinstance(affected, str):
             affected = [affected]
 
+        test_code = f.get("test_code", detail.get("test_code", ""))
+
         evidence_html = f"<pre>{_esc(evidence)}</pre>" if evidence else "<p><em>See test output in conversation log.</em></p>"
         poc_html = f"<pre>{_esc(poc)}</pre>" if poc else ""
         request_html = f"<h4>Request Sent</h4><pre>{_esc(request)}</pre>" if request else ""
-        response_html = f"<h4>Server Response</h4><pre>{_esc(response[:2000])}</pre>" if response else ""
+        response_html = f"<h4>Server Response</h4><pre>{_esc(response[:5000])}</pre>" if response else ""
+        test_code_html = f"<h4>Test Code (Exact Script)</h4><pre>{_esc(test_code)}</pre>" if test_code else ""
         # Embed screenshot as base64 image if file exists, otherwise show filename
         screenshot_html = ""
         if screenshot_name:
@@ -555,6 +558,8 @@ def _build_detailed_findings(findings) -> str:
       {screenshot_html}
 
       {"<h4>Proof of Concept</h4>" + poc_html if poc_html else ""}
+
+      {test_code_html}
 
       <h4>Remediation</h4>
       {remediation_html}
@@ -823,4 +828,389 @@ def generate_report(g: dict, output_path: str = "report.html") -> str:
     # ── Write ────────────────────────────────────────────────────────────
     out = Path(output_path)
     out.write_text(html_doc, encoding="utf-8")
+    return str(out.resolve())
+
+
+# ── ZDL-format numbered report (Markdown) ────────────────────────────────────
+
+_ZDL_RISK_MATRIX_MD = """\
+|  Likelihood \\ Severity  |  1  |  4  |  9  |  16  |  25  |
+|:----------------------:|:---:|:---:|:---:|:----:|:----:|
+| **1**                  |  1  |  4  |  9  |  16  |  25  |
+| **2**                  |  2  |  8  | 18  |  32  |  50  |
+| **3**                  |  3  | 12  | 27  |  48  |  75  |
+| **4**                  |  4  | 16  | 36  |  64  | 100  |
+| **5**                  |  5  | 20  | 45  |  80  | 125  |
+
+*Severity: 1 (low) – 25 (very severe). Likelihood: 1 (unlikely) – 5 (highly likely).*
+"""
+
+# Maps CVSS range → (likelihood, severity_col, risk, label)
+_ZDL_CVSS_RISK = [
+    (9.0, 10.0, 5, 25, 125.0, "Critical"),
+    (7.0,  8.9, 4, 16,  64.0, "High"),
+    (4.0,  6.9, 4,  9,  36.0, "Medium"),
+    (2.0,  3.9, 2,  4,   8.0, "Low"),
+    (0.0,  1.9, 1,  1,   1.0, "Info"),
+]
+
+# Fallback when no CVSS — driven by severity string
+_ZDL_SEV_RISK = {
+    "CRITICAL": (5, 25, 125.0, "Critical",  "9.0 — AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"),
+    "HIGH":     (4, 16,  64.0, "High",      "7.5 — AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"),
+    "MEDIUM":   (3,  9,  27.0, "Medium",    "5.3 — AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"),
+    "LOW":      (2,  4,   8.0, "Low",       "3.1 — AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:N/A:N"),
+    "INFO":     (1,  1,   1.0, "Info",      "0.0 — AV:N/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N"),
+}
+
+_ZDL_CVSS_DESC = {
+    "CRITICAL": ("very high", "When successfully exploited, this vulnerability could lead to full system compromise, remote code execution, or complete data breach."),
+    "HIGH":     ("high",      "When successfully exploited, this vulnerability could lead to significant data exposure, authentication bypass, or privilege escalation."),
+    "MEDIUM":   ("moderate",  "When successfully exploited, this vulnerability could lead to partial information disclosure or limited impact on application integrity."),
+    "LOW":      ("low",       "When successfully exploited, this vulnerability has limited direct impact, but may aid in further attack chains."),
+    "INFO":     ("minimal",   "This informational finding has no direct security impact but represents a security best-practice gap."),
+}
+
+_ZDL_OWASP_REFS = {
+    "SQL Injection":    "https://cwe.mitre.org/data/definitions/89.html",
+    "SQLi":             "https://cwe.mitre.org/data/definitions/89.html",
+    "XSS":              "https://cwe.mitre.org/data/definitions/79.html",
+    "Command Injection":"https://cwe.mitre.org/data/definitions/77.html",
+    "SSRF":             "https://cwe.mitre.org/data/definitions/918.html",
+    "CSRF":             "https://cwe.mitre.org/data/definitions/352.html",
+    "IDOR":             "https://cwe.mitre.org/data/definitions/639.html",
+    "Path Traversal":   "https://cwe.mitre.org/data/definitions/22.html",
+    "LFI":              "https://cwe.mitre.org/data/definitions/22.html",
+    "JWT":              "https://cwe.mitre.org/data/definitions/347.html",
+    "Open Redirect":    "https://cwe.mitre.org/data/definitions/601.html",
+    "CORS":             "https://cwe.mitre.org/data/definitions/942.html",
+    "XXE":              "https://cwe.mitre.org/data/definitions/611.html",
+    "Deserialization":  "https://cwe.mitre.org/data/definitions/502.html",
+    "Race Condition":   "https://cwe.mitre.org/data/definitions/362.html",
+    "File Upload":      "https://cwe.mitre.org/data/definitions/434.html",
+    "SSTI":             "https://cwe.mitre.org/data/definitions/94.html",
+    "GraphQL":          "https://cwe.mitre.org/data/definitions/200.html",
+    "Secret":           "https://cwe.mitre.org/data/definitions/312.html",
+    "Hardcoded":        "https://cwe.mitre.org/data/definitions/798.html",
+    "Data Exposure":    "https://cwe.mitre.org/data/definitions/200.html",
+    "Version":          "https://cwe.mitre.org/data/definitions/1104.html",
+    "Cookie":           "https://cwe.mitre.org/data/definitions/614.html",
+    "Session":          "https://cwe.mitre.org/data/definitions/384.html",
+}
+
+_ZDL_REMEDIATION = {
+    "CRITICAL": [
+        "Patch or disable the vulnerable component immediately.",
+        "Apply input validation and output encoding at all entry points.",
+        "Implement a Web Application Firewall (WAF) as a short-term mitigation.",
+        "Audit all related code paths for the same vulnerability class.",
+        "Conduct a re-test after remediation to confirm the fix.",
+    ],
+    "HIGH": [
+        "Apply vendor-recommended patch or configuration hardening.",
+        "Implement strict input validation using an allowlist approach.",
+        "Enable security headers and enforce least-privilege access controls.",
+        "Perform a code review of the affected component.",
+    ],
+    "MEDIUM": [
+        "Apply the recommended configuration change or code fix.",
+        "Implement defence-in-depth controls around the affected functionality.",
+        "Monitor the affected endpoint for anomalous activity.",
+        "Include in the next scheduled patch cycle.",
+    ],
+    "LOW": [
+        "Address during the next regular development sprint.",
+        "Update to the latest stable version of the affected component.",
+        "Apply security best-practice hardening guidance.",
+    ],
+    "INFO": [
+        "Review the observation and consider implementing the recommended best practice.",
+        "Include in the organisation's security awareness training if applicable.",
+    ],
+}
+
+
+def _zdl_risk_for_finding(finding: dict) -> tuple:
+    """Return (likelihood, severity_col, risk_val, risk_label, cvss_str) for a finding."""
+    cvss_raw = finding.get("cvss", finding.get("detail", {}).get("cvss", "") if isinstance(finding.get("detail"), dict) else "")
+    cvss_str = str(cvss_raw).strip()
+    sev = finding.get("severity", "INFO").upper()
+
+    # Try to parse a float from the CVSS string (may be "7.5 — AV:N/AC:L/..."  or just "7.5")
+    cvss_float = None
+    try:
+        cvss_float = float(cvss_str.split()[0].split("—")[0].strip())
+    except (ValueError, IndexError):
+        pass
+
+    if cvss_float is not None:
+        for lo, hi, lkl, sv, risk, label in _ZDL_CVSS_RISK:
+            if lo <= cvss_float <= hi:
+                return lkl, sv, risk, label, cvss_str
+
+    # Fallback to severity
+    lkl, sv, risk, label, cvss_default = _ZDL_SEV_RISK.get(sev, _ZDL_SEV_RISK["INFO"])
+    return lkl, sv, risk, label, cvss_str or cvss_default
+
+
+def _zdl_ref_url(title: str) -> str:
+    """Guess a CWE/OWASP reference URL from the finding title."""
+    t_upper = title.upper()
+    for kw, url in _ZDL_OWASP_REFS.items():
+        if kw.upper() in t_upper:
+            return url
+    return "https://cwe.mitre.org/data/definitions/200.html"
+
+
+def _zdl_finding_md(idx: int, f: dict, section_prefix: str) -> str:
+    """Render one finding in ZDL numbered section format."""
+    sev     = f.get("severity", "INFO").upper()
+    title   = f.get("title", "Unnamed Finding")
+    url     = f.get("url", "?")
+    detail  = f.get("detail", {}) if isinstance(f.get("detail"), dict) else {}
+    evidence = f.get("evidence", detail.get("evidence", ""))
+    poc      = f.get("poc",      detail.get("poc",      ""))
+    request  = f.get("request",  detail.get("request",  ""))
+    response = f.get("response", detail.get("response", ""))
+    remediation_custom = f.get("remediation", detail.get("remediation", ""))
+    description = f.get("description", detail.get("description", ""))
+
+    lkl, sv_col, risk_val, risk_label, cvss_str = _zdl_risk_for_finding(f)
+    lkl_desc, sev_desc = _ZDL_CVSS_DESC.get(sev, _ZDL_CVSS_DESC["INFO"])
+    ref_url = _zdl_ref_url(title)
+    rem_bullets = _ZDL_REMEDIATION.get(sev, _ZDL_REMEDIATION["INFO"])
+
+    sec = f"{section_prefix}.{idx}"
+
+    # ── 5.X.3  Proof of Concept ──────────────────────────────────────────────
+    poc_block = ""
+    if request:
+        poc_block += f"\n**HTTP Request**\n```http\n{request.strip()}\n```\n"
+    if response:
+        preview = response[:800].strip()
+        poc_block += f"\n**Server Response (excerpt)**\n```\n{preview}\n```\n"
+    if poc:
+        poc_block += f"\n```\n{poc.strip()}\n```\n"
+    if evidence and not poc_block:
+        poc_block += f"\n```\n{evidence.strip()}\n```\n"
+    if not poc_block:
+        poc_block = "\nSee tool output in the session log for full proof-of-concept details.\n"
+
+    # ── 5.X.2  General description ───────────────────────────────────────────
+    gen_desc = description if description else (
+        f"During testing, a **{title}** vulnerability was identified at `{url}`. "
+        f"This issue falls under the {_guess_owasp(title)} category and represents a {lkl_desc} "
+        f"risk to the application and its data."
+    )
+
+    # ── 5.X.4  Remediation ───────────────────────────────────────────────────
+    rem_section = ""
+    if remediation_custom:
+        rem_section = remediation_custom.strip()
+    else:
+        rem_section = "\n".join(f"- {b}" for b in rem_bullets)
+
+    return f"""
+### {sec}    {title}
+
+#### {sec}.1    Hosts Affected
+- `{url}`
+
+#### {sec}.2    General Description
+{gen_desc}
+
+#### {sec}.3    Proof of Concept
+By performing the following request it was possible to confirm the vulnerability:{poc_block}
+
+#### {sec}.4    Recommended Solution
+In order to mitigate this issue, ZDL Group recommends implementing the following mitigations and protections:
+
+{rem_section}
+
+More information can be found at:
+- {ref_url}
+
+#### {sec}.5    Risk Matrix
+
+{_ZDL_RISK_MATRIX_MD}
+
+#### {sec}.6    Risk Classification
+
+| | |
+|---|---|
+| **Likelihood** | The likelihood of exploiting this vulnerability is {lkl_desc}, as {sev_desc} |
+| **Severity** | When successfully exploited, this vulnerability could lead to significant impact on confidentiality, integrity, or availability. |
+| **ZDL Group Assigned Risk** | **{risk_label} ({risk_val:.2f})** |
+| **CVSS:3.1** | **{cvss_str if cvss_str else _ZDL_SEV_RISK.get(sev, _ZDL_SEV_RISK["INFO"])[4]}** |
+
+---
+"""
+
+
+def generate_zdl_report(g: dict, output_path: str = "report_zdl.md", section_prefix: str = "5") -> str:
+    """
+    Generate a ZDL-style numbered penetration test report in Markdown.
+
+    Each finding is rendered as:
+        5.X    Finding Title
+        5.X.1  Hosts Affected
+        5.X.2  General Description
+        5.X.3  Proof of Concept
+        5.X.4  Recommended Solution
+        5.X.5  Risk Matrix
+        5.X.6  Risk Classification
+
+    Parameters
+    ----------
+    g            : The _G persistent globals dict from the agent REPL.
+    output_path  : Where to write the .md file.
+    section_prefix : Top-level section number prefix (default "5").
+
+    Returns
+    -------
+    str : resolved output path
+    """
+    target   = g.get("BASE", g.get("target", "Unknown"))
+    scope    = g.get("SCOPE", target)
+    date_str = datetime.date.today().strftime("%m/%d/%Y")
+
+    # ── Aggregate all findings (same as HTML generator) ──────────────────────
+    all_findings: list[dict] = list(g.get("FINDINGS", []))
+
+    for sf in g.get("SQLI_FINDINGS", []):
+        all_findings.append({
+            "severity": "CRITICAL",
+            "title": f"SQL Injection — {sf.get('type', 'SQLi')} ({sf.get('field', '')})",
+            "url": sf.get("url", ""),
+            "detail": sf,
+        })
+    for cf in g.get("CMDI_FINDINGS", []):
+        all_findings.append({
+            "severity": "CRITICAL",
+            "title": f"Command Injection — {cf.get('param', '')} ({cf.get('method', '')})",
+            "url": cf.get("url", ""),
+            "detail": cf,
+        })
+    for xf in g.get("XSS_FINDINGS", []):
+        all_findings.append({
+            "severity": xf.get("severity", "HIGH"),
+            "title": f"XSS — {xf.get('type', 'XSS')} in {xf.get('param', '')}",
+            "url": xf.get("url", ""),
+            "detail": xf,
+        })
+    for idf in g.get("IDOR_FINDINGS", []):
+        all_findings.append({
+            "severity": idf.get("severity", "HIGH"),
+            "title": f"IDOR — {idf.get('type', 'IDOR')}",
+            "url": idf.get("url", ""),
+            "detail": idf,
+        })
+    for jf in g.get("JS_FINDINGS", []):
+        all_findings.append({
+            "severity": jf.get("sev", jf.get("severity", "HIGH")),
+            "title": f"JS: {jf.get('type', 'JS Issue')}",
+            "url": jf.get("file", jf.get("url", "")),
+            "detail": jf,
+        })
+
+    # Sort by severity, deduplicate
+    all_findings.sort(key=lambda f: _SEV_META.get(f.get("severity", "INFO").upper(), _SEV_META["INFO"])["rank"])
+    seen: set = set()
+    deduped: list[dict] = []
+    for f in all_findings:
+        key = (f.get("title", ""), f.get("url", ""))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(f)
+    all_findings = deduped
+
+    counts: dict = {}
+    for f in all_findings:
+        sev = f.get("severity", "INFO").upper()
+        counts[sev] = counts.get(sev, 0) + 1
+
+    rating = _overall_rating(counts)
+    total  = sum(counts.values())
+
+    # ── Header ───────────────────────────────────────────────────────────────
+    header = f"""\
+# Penetration Test Report
+
+| | |
+|---|---|
+| **Target** | `{target}` |
+| **Scope** | {scope} |
+| **Test Date** | {date_str} |
+| **Prepared by** | TheRobin AI Security Engine |
+| **Methodology** | OWASP Top 10 (2021), PTES, OWASP WSTG |
+| **Classification** | CONFIDENTIAL |
+
+---
+
+## 1. Executive Summary
+
+A penetration test was conducted against **{target}**. The assessment identified **{total} vulnerabilities**:
+{counts.get('CRITICAL', 0)} Critical, {counts.get('HIGH', 0)} High, {counts.get('MEDIUM', 0)} Medium, {counts.get('LOW', 0)} Low, {counts.get('INFO', 0)} Informational.
+
+Overall security rating: **{rating}**
+
+{_RISK_LABELS.get(rating, '')}
+
+---
+
+## 2. Findings Overview
+
+| # | Severity | Finding | CVSS | OWASP |
+|---|----------|---------|------|-------|
+"""
+
+    for i, f in enumerate(all_findings, 1):
+        sev   = f.get("severity", "INFO").upper()
+        title = f.get("title", "—")
+        cvss  = str(f.get("cvss", f.get("detail", {}).get("cvss", "—") if isinstance(f.get("detail"), dict) else "—"))
+        owasp = _guess_owasp(title)
+        header += f"| {i} | **{sev}** | {title} | {cvss.split()[0] if cvss != '—' else '—'} | {owasp} |\n"
+
+    header += f"\n---\n\n## {section_prefix}. Detailed Findings\n"
+
+    # ── Per-finding sections ─────────────────────────────────────────────────
+    if not all_findings:
+        findings_md = "\n*No findings were recorded in the session. Check the session log for manual findings.*\n"
+    else:
+        findings_md = "".join(
+            _zdl_finding_md(i, f, section_prefix)
+            for i, f in enumerate(all_findings, 1)
+        )
+
+    # ── Remediation roadmap ───────────────────────────────────────────────────
+    roadmap = f"\n## {int(section_prefix) + 1}. Remediation Roadmap\n\n"
+    prio_map = {
+        "P1 — Immediate (0-48h)": [f for f in all_findings if f.get("severity", "").upper() == "CRITICAL"],
+        "P2 — Short-term (1-2w)": [f for f in all_findings if f.get("severity", "").upper() == "HIGH"],
+        "P3 — Medium-term (1mo)": [f for f in all_findings if f.get("severity", "").upper() == "MEDIUM"],
+        "P4 — Long-term":         [f for f in all_findings if f.get("severity", "").upper() in ("LOW", "INFO")],
+    }
+    for prio, items in prio_map.items():
+        roadmap += f"### {prio}\n"
+        if items:
+            for f in items:
+                roadmap += f"- **{f.get('title', '?')}** — `{f.get('url', '?')}`\n"
+        else:
+            roadmap += "- *No findings at this priority level.*\n"
+        roadmap += "\n"
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    footer = """\
+
+---
+
+*This report is confidential and intended solely for the authorised recipient.*
+*All findings were confirmed through active testing with proof-of-concept evidence.*
+*Generated by TheRobin AI Security Engine.*
+"""
+
+    doc = header + findings_md + roadmap + footer
+
+    out = Path(output_path)
+    out.write_text(doc, encoding="utf-8")
     return str(out.resolve())

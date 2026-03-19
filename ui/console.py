@@ -257,6 +257,7 @@ class PentestConsole:
             "[bold]options[/bold]  "
             "[bold]model <name>[/bold]  "
             "[bold]report[/bold]  "
+            "[bold]paste[/bold]  "
             "[bold]help[/bold]  "
             "[bold]quit[/bold]"
         )
@@ -593,20 +594,49 @@ class PentestConsole:
         else:
             self.console.print(f"{'':80}", end="\r", highlight=False)
 
+    def _collect_paste(self) -> str:
+        """
+        Multiline paste mode.
+        Reads lines until the user types a lone '.' on its own line (or EOF).
+        Returns the full pasted block as a single string.
+        """
+        self.console.print(
+            "\n[dim]  Paste mode active — paste your text, then type [bold white].[/bold white] "
+            "on a new line and press Enter to submit.[/dim]\n"
+        )
+        lines = []
+        while True:
+            try:
+                chunk = input()
+            except EOFError:
+                break
+            if chunk.strip() == ".":
+                break
+            lines.append(chunk)
+        text = "\n".join(lines).strip()
+        if text:
+            self.console.print(
+                f"[dim]  ✓ Paste received ({len(lines)} lines, {len(text)} chars)[/dim]\n"
+            )
+        return text
+
     def prompt_user(self) -> str:
         """
         Read a line of input.
         Arrow keys ←/→ move cursor, ↑/↓ scroll history, Ctrl+R searches history.
         All history is saved to ~/.pentest_console_history between sessions.
 
-        Uses plain input() with ANSI codes wrapped in \\x01..\\x02 so readline
-        correctly tracks cursor position — fixes arrow-key garbling with Rich.
+        Type  paste  (or /paste) to enter multiline paste mode — useful for
+        sending large context blocks (findings, configs, etc.).  End paste with
+        a lone  .  on its own line.
         """
         self.console.print()
         try:
             # \x01..\x02 marks zero-width chars for readline cursor accounting
             prompt = "\x01\033[1;36m\x02>\x01\033[0m\x02 "
             line = input(prompt).strip()
+            if line.lower() in ("paste", "/paste"):
+                return self._collect_paste()
             return line
         except (EOFError, KeyboardInterrupt):
             return "/quit"
@@ -682,6 +712,9 @@ class PentestConsole:
         """Input prompt for the setup / options phase."""
         try:
             prompt = "\x01\033[1;31m\x02therobin\x01\033[0m\x02\x01\033[2;37m\x02 ❯\x01\033[0m\x02 "
-            return input(prompt).strip()
+            line = input(prompt).strip()
+            if line.lower() in ("paste", "/paste"):
+                return self._collect_paste()
+            return line
         except (EOFError, KeyboardInterrupt):
             return "quit"

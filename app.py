@@ -469,10 +469,52 @@ class App:
             return True
 
         elif command == "report":
+            # 1 — Generate ZDL-format markdown report from collected _G findings
+            try:
+                from agent.tools import _G
+                from agent.report_gen import generate_zdl_report
+                import agent.tools as tools_mod
+                zdl_path = str(tools_mod.WORKSPACE_DIR / "report_zdl.md")
+                out = generate_zdl_report(_G, output_path=zdl_path)
+                self.ui.print_system(f"ZDL report saved: {out}")
+            except Exception as e:
+                self.ui.print_system(f"[warn] ZDL report generation error: {e}")
+
+            # 2 — Ask the LLM to compile everything it knows and append/create a full ZDL report
             self._run_agent(
-                "Please generate a comprehensive penetration test report of everything we've found "
-                "so far. Save it to 'report.md' using write_file. Include: Executive Summary, "
-                "Scope, Methodology, Findings (with severity), Recommendations, and Conclusion."
+                "Generate a complete penetration test report in ZDL numbered format.\n\n"
+                "For EVERY vulnerability found during this engagement, write one section using EXACTLY this structure:\n\n"
+                "### X.X    <Finding Title>\n\n"
+                "#### X.X.1    Hosts Affected\n"
+                "- `host:port or URL`\n\n"
+                "#### X.X.2    General Description\n"
+                "Web applications often... [2-3 paragraphs describing the vulnerability class and what was found]\n\n"
+                "#### X.X.3    Proof of Concept\n"
+                "By performing the following request it was possible to confirm the vulnerability:\n\n"
+                "```\ncurl / python / nmap output — actual evidence from the test\n```\n\n"
+                "#### X.X.4    Recommended Solution\n"
+                "In order to mitigate this issue, ZDL Group recommends implementing the following mitigations:\n"
+                "- bullet 1\n- bullet 2\n- bullet 3\n\n"
+                "More information can be found at:\n"
+                "- https://cwe.mitre.org/...\n\n"
+                "#### X.X.5    Risk Matrix\n\n"
+                "| Likelihood \\ Severity | 1 | 4 | 9 | 16 | 25 |\n"
+                "|:---:|:---:|:---:|:---:|:---:|:---:|\n"
+                "| 1 | 1 | 4 | 9 | 16 | 25 |\n"
+                "| 2 | 2 | 8 | 18 | 32 | 50 |\n"
+                "| 3 | 3 | 12 | 27 | 48 | 75 |\n"
+                "| 4 | 4 | 16 | 36 | 64 | 100 |\n"
+                "| 5 | 5 | 20 | 45 | 80 | 125 |\n\n"
+                "#### X.X.6    Risk Classification\n\n"
+                "| | |\n|---|---|\n"
+                "| **Likelihood** | The likelihood of exploiting this vulnerability is [high/moderate/low]... |\n"
+                "| **Severity** | When successfully exploited, this vulnerability could lead to... |\n"
+                "| **ZDL Group Assigned Risk** | **[Critical/High/Medium/Low] ([score].00)** |\n"
+                "| **CVSS:3.1** | **[score] — [vector]** |\n\n"
+                "---\n\n"
+                "Use section numbers starting from 5.1 (e.g. 5.1, 5.2, 5.3…).\n"
+                "Include EVERY finding from this engagement. After all findings, add a short Conclusion section.\n"
+                "Save the full report to 'report_full.md' using write_file."
             )
             return True
 
@@ -483,7 +525,8 @@ class App:
             self.ui.print_system("  /model [name]       — switch Ollama model")
             self.ui.print_system("  /set <OPT> <value>  — update session option (TARGET, USERNAME, COOKIE, TOR, etc.)")
             self.ui.print_system("  /options            — show current session options table")
-            self.ui.print_system("  /report             — generate final pentest report")
+            self.ui.print_system("  /report             — generate final pentest report (ZDL + HTML)")
+            self.ui.print_system("  paste               — enter multiline paste mode (end with a lone '.' line)")
             self.ui.print_system("  /quit               — exit")
             self.ui.print_system("  Tip: set COOKIE 'session=abc123' to skip login on 2FA apps")
             self.ui.print_system("  Tip: set TOR on  — route web_request and osint through Tor (localhost:9050)")
