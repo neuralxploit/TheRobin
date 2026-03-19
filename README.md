@@ -140,7 +140,7 @@ bash setup.sh
 
 The setup script creates a virtual environment, installs all dependencies, and generates the run script.
 
-### Ollama Setup
+### Option A: Ollama (Free / Local)
 
 ```bash
 # Install Ollama
@@ -150,29 +150,61 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull glm-4.7:cloud
 ```
 
+```bash
+# Run with Ollama
+./run.sh -t https://target.com -m glm-4.7:cloud
+```
+
+### Option B: Claude API (Anthropic)
+
+TheRobin supports Claude models directly via the Anthropic API — no Ollama required. Claude has strong tool calling, 200K context, and vision support.
+
+```bash
+# Set your API key (get one at https://console.anthropic.com)
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+# Run with Claude
+python main.py -t https://target.com -m claude-sonnet-4-20250514
+```
+
+To make the key permanent:
+```bash
+echo 'export ANTHROPIC_API_KEY=sk-ant-your-key-here' >> ~/.bashrc
+source ~/.bashrc
+```
+
 <details>
 <summary><b>Available Models</b></summary>
 
-**Cloud-proxied** (via Ollama infrastructure — data sent to provider):
+**Claude API** (via Anthropic — requires API key):
 | Model | Vision | Notes |
 |-------|--------|-------|
-| `glm-4.7:cloud` | ❌ | **Recommended** — 128K context, best tool calling, follows all 29 phases reliably |
+| `claude-sonnet-4-20250514` | ✅ | **Recommended** — fast, strong tool calling, 200K context |
+| `claude-opus-4-20250514` | ✅ | Most capable, slower, higher cost |
+| `claude-haiku-4-5-20251001` | ✅ | Fastest, cheapest, good for simple targets |
+
+**Ollama Cloud-proxied** (via Ollama infrastructure — data sent to provider):
+| Model | Vision | Notes |
+|-------|--------|-------|
+| `glm-4.7:cloud` | ❌ | **Recommended for Ollama** — 128K context, best tool calling, follows all 29 phases reliably |
 | `glm-5:cloud` | ❌ | Coding-specialized, strong tool calling |
 | `kimi-k2.5:cloud` | ✅ | Vision + tools, but poor phase adherence — not recommended |
 | `kimi-k2:1t-cloud` | ❌ | Strong reasoning, large context |
 | `deepseek-v3.1:671b-cloud` | ❌ | High capability, slower |
 | `qwen3-coder-next:cloud` | ❌ | Good coding performance |
 
-**Local** (fully private — requires GPU with sufficient VRAM):
+**Ollama Local** (fully private — requires GPU with sufficient VRAM):
 | Model | VRAM | Notes |
 |-------|------|-------|
 | `qwen2.5-coder:32b` | ~20GB | Strong coding, good for pentesting |
 | `deepseek-coder-v2:16b` | ~10GB | Lighter option |
 | `codellama:34b` | ~20GB | Meta's code model |
 
-> Cloud-proxied models (`:cloud` suffix) route prompts and target data through Ollama's cloud infrastructure to the model provider. For sensitive engagements, use a locally-running model.
+> **Claude models** connect directly to Anthropic's API. Target data is sent to Anthropic. For fully private testing, use a local Ollama model.
 >
-> **Vision models** (like `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy single-page apps. Non-vision models (like `glm-4.7:cloud`) still work but skip screenshot analysis. Note: `kimi-k2.5:cloud` has vision but does not follow the testing methodology reliably — `glm-4.7:cloud` is recommended for best results.
+> **Cloud-proxied Ollama models** (`:cloud` suffix) route prompts through Ollama's cloud infrastructure. For sensitive engagements, use a locally-running model.
+>
+> **Vision models** (Claude, `kimi-k2.5:cloud`) can analyze browser screenshots — enabling visual confirmation of XSS popups, login pages, error messages, and JS-heavy apps.
 
 </details>
 
