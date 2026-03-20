@@ -20,3 +20,6 @@ flask>=3.0.0
 
 # PDF report generation
 reportlab>=4.0.0
+
+# MCP server (Claude Code / OpenCode integration)
+mcp>=1.0.0
