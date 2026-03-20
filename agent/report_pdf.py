@@ -1896,8 +1896,14 @@ def _build_detailed_findings(findings, styles):
         has_explicit_req = bool(request_raw)
         has_explicit_resp = bool(response_raw)
 
+        # ── Request ──────────────────────────────────────────────────
+        import re as _re_poc
+        _cookie_str = f.get("cookie", detail.get("cookie", ""))
+        _headers_raw = f.get("headers", detail.get("headers", ""))
+
         if has_explicit_req:
-            elements.append(Paragraph("The following request was sent:", styles["Body"]))
+            elements.append(Paragraph(
+                "The following HTTP request was used to identify the vulnerability:", styles["Body"]))
             elements.append(Spacer(1, 2 * mm))
             elements.append(Paragraph("<b>Request:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
@@ -1905,24 +1911,46 @@ def _build_detailed_findings(findings, styles):
                 _xml_safe(request_raw).replace("\n", "<br/>"), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
         else:
-            # Auto-build a synthetic request display from available data
+            # Auto-build a full HTTP request from available data
             _syn_req_lines = []
             _url_parsed = url if url and url != "—" else "/"
-            _syn_req_lines.append(f"{method_str} {_url_parsed} HTTP/1.1")
-            # Extract host from URL
-            import re as _re_poc
-            _host_m = _re_poc.match(r'https?://([^/:]+)', str(url or ""))
+            # Parse path from full URL for the request line
+            _path = _url_parsed
+            _host_m = _re_poc.match(r'https?://([^/:]+)(:\d+)?(/.*)?$', str(url or ""))
             if _host_m:
-                _syn_req_lines.append(f"Host: {_host_m.group(1)}")
-            _syn_req_lines.append("User-Agent: Mozilla/5.0 (TheRobin Security Scanner)")
-            _syn_req_lines.append("Accept: */*")
+                _path = _host_m.group(3) or "/"
+
+            _syn_req_lines.append(f"{method_str} {_path} HTTP/1.1")
+            if _host_m:
+                _host_val = _host_m.group(1)
+                if _host_m.group(2):
+                    _host_val += _host_m.group(2)
+                _syn_req_lines.append(f"Host: {_host_val}")
+            _syn_req_lines.append("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            _syn_req_lines.append("Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            _syn_req_lines.append("Accept-Language: en-US,en;q=0.5")
+            _syn_req_lines.append("Accept-Encoding: gzip, deflate, br")
             _syn_req_lines.append("Connection: keep-alive")
-            if payload_str and payload_str != "—":
+            if _cookie_str:
+                _syn_req_lines.append(f"Cookie: {_cookie_str}")
+            if _headers_raw:
+                for _hline in str(_headers_raw).split("\n"):
+                    _hline = _hline.strip()
+                    if _hline:
+                        _syn_req_lines.append(_hline)
+            if method_str in ("POST", "PUT", "PATCH"):
+                _syn_req_lines.append("Content-Type: application/x-www-form-urlencoded")
+                if payload_str and payload_str != "—":
+                    _content_len = len(str(payload_str))
+                    _syn_req_lines.append(f"Content-Length: {_content_len}")
+                    _syn_req_lines.append("")
+                    _syn_req_lines.append(str(payload_str))
+            elif payload_str and payload_str != "—":
                 _syn_req_lines.append("")
-                _syn_req_lines.append(f"Payload: {payload_str}")
+                _syn_req_lines.append(f"{payload_str}")
 
             elements.append(Paragraph(
-                "The following request demonstrates the identified issue:", styles["Body"]))
+                "The following HTTP request was used to identify the vulnerability:", styles["Body"]))
             elements.append(Spacer(1, 2 * mm))
             elements.append(Paragraph("<b>Request:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
@@ -1930,24 +1958,46 @@ def _build_detailed_findings(findings, styles):
                 "<br/>".join(_xml_safe(l) for l in _syn_req_lines), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
 
+        # ── Response ────────────────────────────────────────────────────
         if has_explicit_resp:
+            elements.append(Paragraph(
+                "The server returned the following response:", styles["Body"]))
+            elements.append(Spacer(1, 2 * mm))
             elements.append(Paragraph("<b>Response:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
             elements.append(Paragraph(
                 _xml_safe(response_raw).replace("\n", "<br/>"), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
         elif evidence:
-            # Show evidence as the server response / observed output
+            # Build a synthetic response with evidence as the body
+            _syn_resp_lines = []
+            _status = f.get("status_code", detail.get("status_code", ""))
+            if _status:
+                _syn_resp_lines.append(f"HTTP/1.1 {_status}")
+            else:
+                _syn_resp_lines.append("HTTP/1.1 200 OK")
+            _resp_headers = f.get("response_headers", detail.get("response_headers", ""))
+            if _resp_headers:
+                for _rh in str(_resp_headers).split("\n"):
+                    _rh = _rh.strip()
+                    if _rh:
+                        _syn_resp_lines.append(_rh)
+            else:
+                _syn_resp_lines.append("Content-Type: text/html; charset=utf-8")
+                _syn_resp_lines.append("Connection: keep-alive")
+            _syn_resp_lines.append("")
+            _syn_resp_lines.append(f"[...] {str(evidence)[:2000]} [...]")
+
             elements.append(Paragraph(
-                "The following response/output confirms the vulnerability:", styles["Body"]))
+                "The server returned the following response confirming the vulnerability:", styles["Body"]))
             elements.append(Spacer(1, 2 * mm))
-            elements.append(Paragraph("<b>Response / Evidence:</b>", poc_lbl_base))
+            elements.append(Paragraph("<b>Response:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
             elements.append(Paragraph(
-                _xml_safe(evidence).replace("\n", "<br/>"), styles["CodeBlock"]))
+                "<br/>".join(_xml_safe(l) for l in _syn_resp_lines), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
 
-        # Reproduction command (curl or custom)
+        # ── Reproduction Command ────────────────────────────────────────
         if poc:
             elements.append(Paragraph("<b>Reproduction Command:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
@@ -1955,20 +2005,26 @@ def _build_detailed_findings(findings, styles):
                 _xml_safe(poc).replace("\n", "<br/>"), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
         elif url and url != "—":
-            # Auto-generate a curl command
-            _curl = f"curl -sk -D- {url}"
+            # Auto-generate a full curl command with headers
+            _curl_parts = ["curl -sk -D-"]
             if method_str and method_str != "GET":
-                _curl = f"curl -sk -D- -X {method_str} {url}"
+                _curl_parts.append(f"-X {method_str}")
+            _curl_parts.append(f"-H 'User-Agent: Mozilla/5.0'")
+            if _cookie_str:
+                _curl_parts.append(f"-H 'Cookie: {_cookie_str}'")
             if payload_str and payload_str != "—":
-                _curl += f' -d "{payload_str}"'
+                _curl_parts.append(f"-d '{payload_str}'")
+            _curl_parts.append(f"'{url}'")
+            _curl = " \\\n  ".join(_curl_parts)
             elements.append(Paragraph("<b>Reproduction Command:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
-            elements.append(Paragraph(_xml_safe(_curl), styles["CodeBlock"]))
+            elements.append(Paragraph(
+                _xml_safe(_curl).replace("\n", "<br/>"), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
 
-        # Test code
+        # ── Test Code ───────────────────────────────────────────────────
         if test_code:
-            elements.append(Paragraph("<b>Test Code (Exact Script):</b>", poc_lbl_base))
+            elements.append(Paragraph("<b>Test Script:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
             elements.append(Paragraph(
                 _xml_safe(test_code).replace("\n", "<br/>"), styles["CodeBlock"]))

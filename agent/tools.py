@@ -310,6 +310,8 @@ while True:
                 'url': _url, 'method': '', 'payload': '',
                 'evidence': '', 'poc': '', 'request': '',
                 'response': '', 'impact': '', 'remediation': '',
+                'status_code': '', 'response_headers': '', 'cookie': '',
+                'headers': '', 'test_code': '',
             }
             _scan_end = min(_li + 31, len(_stdout_lines))
             _evidence_buf = []
@@ -343,10 +345,10 @@ while True:
                         _response_buf.append(_val)
                     continue
                 # Single-line labels (end multi-line blocks)
-                _kv = _re.match(r'(URL|Method|Payload|Parameter|Impact|Remediation)\s*:\s*(.+)', _sl_strip, _re.IGNORECASE)
+                _kv = _re.match(r'(URL|Method|Payload|Parameter|Impact|Remediation|Status[_ ]?Code|Status|Cookie|Headers|Request|Test[_ ]?Code)\s*:\s*(.+)', _sl_strip, _re.IGNORECASE)
                 if _kv:
                     _in_evidence = _in_poc = _in_response = False
-                    _k, _v = _kv.group(1).lower(), _kv.group(2).strip()
+                    _k, _v = _kv.group(1).lower().replace(' ', '_').replace('-', '_'), _kv.group(2).strip()
                     if _k == 'url' and not _poc_fields['url']:
                         _poc_fields['url'] = _v
                     elif _k == 'method':
@@ -357,6 +359,16 @@ while True:
                         _poc_fields['impact'] = _v
                     elif _k == 'remediation':
                         _poc_fields['remediation'] = _v
+                    elif _k in ('status_code', 'status'):
+                        _poc_fields['status_code'] = _v
+                    elif _k == 'cookie':
+                        _poc_fields['cookie'] = _v
+                    elif _k == 'headers':
+                        _poc_fields['headers'] = _v
+                    elif _k == 'request':
+                        _poc_fields['request'] = _v
+                    elif _k == 'test_code':
+                        _poc_fields['test_code'] = _v
                     continue
                 # Continuation lines for multi-line blocks
                 if _in_evidence:
