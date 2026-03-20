@@ -745,11 +745,78 @@ _TITLE_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
+def _llm_normalize_title(raw_title: str) -> str:
+    """Use the LLM to generate a professional finding title.
+
+    Called as a fallback when hardcoded patterns don't match. Asks the
+    configured model to rewrite the raw title into a professional
+    vulnerability class name suitable for a pentest report.
+    """
+    try:
+        import os
+        prompt = (
+            "Rewrite this raw vulnerability finding title into a professional "
+            "pentest report title. Use standard OWASP/CWE naming conventions. "
+            "Do NOT include parameter names, file paths, HTTP methods, or URLs. "
+            "Return ONLY the clean title, nothing else.\n\n"
+            f"Raw title: {raw_title}\n\nProfessional title:"
+        )
+
+        # Try Claude API first (if key available)
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if api_key and api_key != "sk-ant-your-key-here":
+            import urllib.request, json as _json
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=_json.dumps({
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 80,
+                    "messages": [{"role": "user", "content": prompt}],
+                }).encode(),
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read())
+                title = data["content"][0]["text"].strip().strip('"\'')
+                if 5 < len(title) < 120:
+                    return title
+
+        # Fallback: try Ollama if running locally
+        import urllib.request, json as _json
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=_json.dumps({
+                "model": "llama3.2",
+                "prompt": prompt,
+                "stream": False,
+            }).encode(),
+            headers={"content-type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+            title = data.get("response", "").strip().strip('"\'')
+            # Take only the first line in case the model rambles
+            title = title.split("\n")[0].strip()
+            if 5 < len(title) < 120:
+                return title
+    except Exception:
+        pass  # LLM unavailable — fall through to hardcoded cleanup
+    return ""
+
+
+# Cache for LLM-normalized titles to avoid repeated API calls
+_LLM_TITLE_CACHE: dict[str, str] = {}
+
+
 def _normalize_title(raw_title: str) -> str:
     """Transform raw tool-output titles into professional finding names.
 
     Tries exact rewrites first (longest match), then regex patterns,
-    then basic cleanup (strip noise, title-case short titles).
+    then LLM-powered normalization as a fallback, then basic cleanup.
     """
     if not raw_title:
         return "Unknown Finding"
@@ -762,6 +829,7 @@ def _normalize_title(raw_title: str) -> str:
             return _TITLE_REWRITES[key]
 
     # 2. Regex pattern rewrites
+    original = t
     for pattern, replacement in _TITLE_PATTERNS:
         new_t, n = _re.subn(pattern, replacement, t)
         if n > 0:
@@ -774,6 +842,27 @@ def _normalize_title(raw_title: str) -> str:
     t = _re.sub(r"^\[.*?\]\s*", "", t)
     # Remove trailing garbage like "!!!" or "..."
     t = _re.sub(r"[!.]{2,}$", "", t).strip()
+
+    # 4. If hardcoded rules didn't significantly change the title,
+    #    ask the LLM to generate a professional name
+    if t and t == original:
+        # Check if title still looks "ugly" (has params, paths, methods, etc.)
+        _ugly_signs = [
+            _re.search(r'[/\\]', t),              # contains paths
+            _re.search(r'\b(via|POST|GET|PUT|DELETE|PATCH)\b', t),  # HTTP methods
+            _re.search(r'(param|field|endpoint)=', t, _re.IGNORECASE),  # param refs
+            _re.search(r'CONFIRMED|FOUND|DETECTED', t, _re.IGNORECASE),  # noise
+            _re.search(r'\b\w+\.\w+\.\w+', t),     # file.name.ext patterns
+        ]
+        if any(_ugly_signs):
+            # Use cache to avoid repeated calls
+            if t in _LLM_TITLE_CACHE:
+                llm_title = _LLM_TITLE_CACHE[t]
+            else:
+                llm_title = _llm_normalize_title(t)
+                _LLM_TITLE_CACHE[t] = llm_title
+            if llm_title:
+                t = llm_title
 
     return t if t else "Unknown Finding"
 

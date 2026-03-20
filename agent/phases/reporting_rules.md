@@ -1,10 +1,57 @@
 ═══════════════════════════════════════════════════════
-  RULE #5 — DOCUMENT EVERY FINDING WITH FULL POC
+  RULE #5 — PROFESSIONAL FINDING TITLES (MANDATORY)
+═══════════════════════════════════════════════════════
+Every finding title MUST be a PROFESSIONAL vulnerability class name — the kind
+you would see in a real pentest report from a top security firm.
+
+  ✗ WRONG — raw tool output as title:
+    "JS: INTERNAL_ENDPOINT"
+    "JWT token is expired"
+    "SQL Injection (error-based) — /api/login via POST"
+    "Command Injection: tools target parameter"
+    "XSS CONFIRMED - payload reflected unescaped!"
+    "Cookie Missing Secure Flag: refresh_token"
+    "Sensitive File Exposed: /robots.txt"
+
+  ✓ CORRECT — professional vulnerability class names:
+    "Information Disclosure: Internal Endpoint Exposed in JavaScript"
+    "Insecure JSON Web Token (JWT) Configuration"
+    "SQL Injection — Authentication Bypass"
+    "OS Command Injection"
+    "Reflected Cross-Site Scripting (XSS)"
+    "Insecure Cookie Configuration: Missing Secure Flag"
+    "Sensitive File Exposure: robots.txt"
+
+TITLE RULES:
+  1. Use the standard vulnerability class name (OWASP / CWE naming conventions)
+  2. You may add a SHORT qualifier after ":" or "—" (e.g. "SQL Injection — Authentication Bypass")
+  3. NEVER include: parameter names, field names, file paths, HTTP methods, endpoint URLs
+  4. NEVER include: raw tool output, status codes, "CONFIRMED", "FOUND", technical noise
+  5. Think: "What would a CISO read in a board presentation?" — that's your title
+  6. When in doubt, use the OWASP Top 10 category name
+
+MORE EXAMPLES of ugly → professional:
+  "XSS — Reflected in search_param"       → "Reflected Cross-Site Scripting (XSS)"
+  "IDOR — /api/users/123 via GET"         → "Insecure Direct Object Reference (IDOR)"
+  "SSRF via url param in /fetch"           → "Server-Side Request Forgery (SSRF)"
+  "SSTI confirmed in template engine"      → "Server-Side Template Injection (SSTI)"
+  "Missing HSTS header"                    → "Missing HTTP Strict Transport Security (HSTS)"
+  "Server: Apache/2.4.41 disclosed"        → "Server Version Disclosure"
+  "Default admin:admin credentials work"   → "Default Credentials: Administrative Access"
+  "Open redirect via next= parameter"      → "Unvalidated Redirect"
+  "CSRF token missing on /settings POST"   → "Cross-Site Request Forgery (CSRF)"
+  "Pickle deserialization RCE"             → "Insecure Deserialization: Remote Code Execution"
+  "Directory listing on /uploads/"         → "Directory Listing Enabled"
+  "GraphQL introspection enabled"          → "GraphQL Introspection Enabled"
+  "Race condition on coupon redemption"    → "Race Condition: Business Logic Bypass"
+
+═══════════════════════════════════════════════════════
+  RULE #6 — DOCUMENT EVERY FINDING WITH FULL POC
 ═══════════════════════════════════════════════════════
 When you discover a vulnerability, you MUST immediately print ALL of the
 following — never just write a label like "[HIGH] SQLi found" without evidence:
 
-  FINDING: <short title>
+  FINDING: <professional title — see Rule #5>
   Severity: [CRITICAL/HIGH/MEDIUM/LOW/INFO]
   URL:      <exact URL that is vulnerable>
   Method:   GET or POST
@@ -110,9 +157,10 @@ SCREENSHOT EVIDENCE — VISUAL PROOF FOR CONFIRMED VULNERABILITIES:
 INLINE PRINT PATTERN — every time a finding is confirmed:
 
   STEP 1 — Print the full finding block to the console (so it's visible):
+  NOTE: The title after FINDING: MUST follow Rule #5 — professional class name only!
 
   print("=" * 70)
-  print(f"[CRITICAL] FINDING: SQL Injection in login form")
+  print(f"[CRITICAL] FINDING: SQL Injection — Authentication Bypass")  # ← Professional title!
   print(f"URL:      https://target.com/login")
   print(f"Method:   POST")
   print(f"Payload:  username=' OR '1'='1' --  |  password=x")
@@ -139,7 +187,7 @@ curl -sk -A "$UA" -X POST "https://target.com/login"{_cookie_flag} \\
 
   _G.setdefault('FINDINGS', []).append({
       'severity':      'CRITICAL',
-      'title':         'SQL Injection in login form',
+      'title':         'SQL Injection — Authentication Bypass',  # Professional title per Rule #5!
       'url':           'https://target.com/login',
       'method':        'POST',
       'param':         'username',
