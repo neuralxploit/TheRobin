@@ -214,13 +214,41 @@ pentest http://target.com admin/password123
 
 Claude Code reads `CLAUDE.md` automatically and acts as the full pentest agent — it loads the phase guides, writes and runs test code via its built-in execution tools, tracks all findings, and generates the final PDF report. No model downloads, no config.
 
-| | TheRobin Loop (Options A/B) | Claude Code (Option C) |
-|---|---|---|
-| **Model** | Ollama / Anthropic API | Claude Code subscription |
-| **Setup** | `bash setup.sh` + model pull | `npm install -g @anthropic-ai/claude-code` |
-| **Interaction** | Autonomous — watch it run | Conversational — ask questions mid-test |
-| **Phases** | Full 29-phase auto-run | Full 29-phase, you can steer |
-| **Report** | Auto-generated at end | Ask "generate the report" anytime |
+### Option D: OpenCode CLI — Free Models Available
+
+OpenCode is an open-source AI coding agent with free models included. Works similarly to Claude Code with TUI and Build modes.
+
+```bash
+# Install OpenCode
+curl -fsSL https://opencode.ai/install | bash
+
+# Clone and open
+git clone https://github.com/neuralxploit/TheRobin.git
+cd TheRobin
+opencode
+```
+
+Then start by reading the integration guide:
+
+```
+Read OPENCODE.md
+```
+
+Now run your pentest:
+
+```
+pentest http://target.com admin/password123
+```
+
+OpenCode will act as the full pentest agent — it loads the phase guides, writes and runs test code via its built-in execution tools, tracks all findings, and generates the final PDF report.
+
+| | TheRobin Loop (Options A/B) | Claude Code (Option C) | OpenCode (Option D) |
+|---|---|---|---|
+| **Model** | Ollama / Anthropic API | Claude Code subscription | OpenCode (free models available) |
+| **Setup** | `bash setup.sh` + model pull | `npm install -g @anthropic-ai/claude-code` | `curl -fsSL https://opencode.ai/install | bash` |
+| **Interaction** | Autonomous — watch it run | Conversational — ask questions mid-test | Conversational — TUI/Build modes |
+| **Phases** | Full 29-phase auto-run | Full 29-phase, you can steer | Full 29-phase, you can steer |
+| **Report** | Auto-generated at end | Ask "generate the report" anytime | Ask "generate the report" anytime |
 
 <details>
 <summary><b>Available Models</b></summary>
