@@ -2048,37 +2048,88 @@ def _build_detailed_findings(findings, styles):
             elements.append(Spacer(1, 4 * mm))
 
         # ── Response ────────────────────────────────────────────────────
+        # Try to extract real headers from evidence/response text
+        def _parse_http_response(raw_text):
+            """Parse HTTP response text to separate status, headers, and body."""
+            if not raw_text:
+                return "", [], ""
+            lines = str(raw_text).split("\n")
+            status_line = ""
+            headers = []
+            body_start = 0
+
+            # Check if it starts with HTTP/
+            if lines and _re_poc.match(r'^HTTP/\d', lines[0].strip()):
+                status_line = lines[0].strip()
+                for idx, line in enumerate(lines[1:], 1):
+                    stripped = line.strip()
+                    if not stripped:
+                        body_start = idx + 1
+                        break
+                    if ":" in stripped:
+                        headers.append(stripped)
+                    else:
+                        body_start = idx
+                        break
+                else:
+                    body_start = len(lines)
+            body = "\n".join(lines[body_start:]).strip() if body_start < len(lines) else ""
+            return status_line, headers, body
+
+        _resp_status_line, _resp_parsed_headers, _resp_body = "", [], ""
+
         if has_explicit_resp:
+            _resp_status_line, _resp_parsed_headers, _resp_body = _parse_http_response(response_raw)
+
+        # Also try to extract headers from evidence if response is sparse
+        if not _resp_parsed_headers and evidence:
+            _ev_status, _ev_headers, _ev_body = _parse_http_response(evidence)
+            if _ev_headers:
+                _resp_status_line = _resp_status_line or _ev_status
+                _resp_parsed_headers = _ev_headers
+                _resp_body = _resp_body or _ev_body
+
+        # Build the full response display
+        _syn_resp_lines = []
+        _status = f.get("status_code", detail.get("status_code", ""))
+        _resp_headers_raw = f.get("response_headers", detail.get("response_headers", ""))
+
+        # Status line
+        if _resp_status_line:
+            _syn_resp_lines.append(_resp_status_line)
+        elif _status:
+            _syn_resp_lines.append(f"HTTP/1.1 {_status}")
+        else:
+            _syn_resp_lines.append("HTTP/1.1 200 OK")
+
+        # Headers — prefer parsed real headers, then captured response_headers field
+        if _resp_parsed_headers:
+            _syn_resp_lines.extend(_resp_parsed_headers)
+        elif _resp_headers_raw:
+            for _rh in str(_resp_headers_raw).split("\n"):
+                _rh = _rh.strip()
+                if _rh:
+                    _syn_resp_lines.append(_rh)
+        else:
+            # Minimal synthetic headers when nothing real is available
+            _syn_resp_lines.append("Content-Type: text/html; charset=utf-8")
+            _syn_resp_lines.append("Connection: keep-alive")
+
+        # Blank line separating headers from body
+        _syn_resp_lines.append("")
+
+        # Body — prefer parsed body, then evidence, then raw response
+        _body_text = _resp_body or str(evidence or response_raw or "")
+        if _body_text:
+            # Show the body with evidence highlighting
+            _body_truncated = _body_text[:2500]
+            _syn_resp_lines.append(_body_truncated)
+            if len(_body_text) > 2500:
+                _syn_resp_lines.append(f"[... truncated, {len(_body_text)} bytes total ...]")
+
+        if _syn_resp_lines and any(l.strip() for l in _syn_resp_lines):
             elements.append(Paragraph(
                 "The server returned the following response:", styles["Body"]))
-            elements.append(Spacer(1, 2 * mm))
-            elements.append(Paragraph("<b>Response:</b>", poc_lbl_base))
-            elements.append(Spacer(1, 1 * mm))
-            elements.append(Paragraph(
-                _xml_safe(response_raw).replace("\n", "<br/>"), styles["CodeBlock"]))
-            elements.append(Spacer(1, 4 * mm))
-        elif evidence:
-            # Build a synthetic response with evidence as the body
-            _syn_resp_lines = []
-            _status = f.get("status_code", detail.get("status_code", ""))
-            if _status:
-                _syn_resp_lines.append(f"HTTP/1.1 {_status}")
-            else:
-                _syn_resp_lines.append("HTTP/1.1 200 OK")
-            _resp_headers = f.get("response_headers", detail.get("response_headers", ""))
-            if _resp_headers:
-                for _rh in str(_resp_headers).split("\n"):
-                    _rh = _rh.strip()
-                    if _rh:
-                        _syn_resp_lines.append(_rh)
-            else:
-                _syn_resp_lines.append("Content-Type: text/html; charset=utf-8")
-                _syn_resp_lines.append("Connection: keep-alive")
-            _syn_resp_lines.append("")
-            _syn_resp_lines.append(f"[...] {str(evidence)[:2000]} [...]")
-
-            elements.append(Paragraph(
-                "The server returned the following response confirming the vulnerability:", styles["Body"]))
             elements.append(Spacer(1, 2 * mm))
             elements.append(Paragraph("<b>Response:</b>", poc_lbl_base))
             elements.append(Spacer(1, 1 * mm))
@@ -2094,13 +2145,15 @@ def _build_detailed_findings(findings, styles):
                 _xml_safe(poc).replace("\n", "<br/>"), styles["CodeBlock"]))
             elements.append(Spacer(1, 4 * mm))
         elif url and url != "—":
-            # Auto-generate a full curl command with headers
+            # Auto-generate a full curl command with headers (-D- dumps response headers)
             _curl_parts = ["curl -sk -D-"]
             if method_str and method_str != "GET":
                 _curl_parts.append(f"-X {method_str}")
-            _curl_parts.append(f"-H 'User-Agent: Mozilla/5.0'")
+            _curl_parts.append("-A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'")
             if _cookie_str:
-                _curl_parts.append(f"-H 'Cookie: {_cookie_str}'")
+                _curl_parts.append(f"-b '{_cookie_str}'")
+            if method_str in ("POST", "PUT", "PATCH"):
+                _curl_parts.append("-H 'Content-Type: application/x-www-form-urlencoded'")
             if payload_str and payload_str != "—":
                 _curl_parts.append(f"-d '{payload_str}'")
             _curl_parts.append(f"'{url}'")
@@ -2699,6 +2752,101 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
                 best_f["title"] = f"{best_f['title']} ({count} instances)"
 
     all_findings = deduped
+
+    # ── Chain similar findings into single entries with multiple POCs ──
+    # e.g., "Cookie Missing HttpOnly: session_id" + "Cookie Missing HttpOnly: csrf_token"
+    # → ONE finding "Insecure Cookie Configuration: Missing HttpOnly Flag" with all cookies listed
+    _CHAIN_PATTERNS = {
+        r'(?i)cookie.*missing.*httponly': 'Insecure Cookie Configuration: Missing HttpOnly Flag',
+        r'(?i)cookie.*missing.*secure\s*flag': 'Insecure Cookie Configuration: Missing Secure Flag',
+        r'(?i)cookie.*missing.*samesite': 'Insecure Cookie Configuration: Missing SameSite Attribute',
+        r'(?i)cookie.*httponly\s*not\s*set': 'Insecure Cookie Configuration: Missing HttpOnly Flag',
+        r'(?i)cookie.*secure\s*not\s*set': 'Insecure Cookie Configuration: Missing Secure Flag',
+        r'(?i)missing.*security.*header': 'Missing HTTP Security Headers',
+        r'(?i)server.*version.*disclos': 'Server Version Disclosure',
+        r'(?i)sensitive.*file.*expos': 'Sensitive File Exposure',
+        r'(?i)information.*disclosure.*javascript': 'Information Disclosure: Secrets in JavaScript',
+        r'(?i)js.*secret': 'Information Disclosure: Secrets in JavaScript',
+    }
+
+    chained: dict[str, list] = {}  # chain_title → list of findings
+    unchained = []
+
+    for f in all_findings:
+        title = f.get("title", "")
+        matched_chain = None
+        for pattern, chain_title in _CHAIN_PATTERNS.items():
+            if _re.search(pattern, title):
+                matched_chain = chain_title
+                break
+        if matched_chain:
+            chained.setdefault(matched_chain, []).append(f)
+        else:
+            unchained.append(f)
+
+    # Build merged findings from chains
+    for chain_title, group in chained.items():
+        if len(group) == 1:
+            # Only one finding — no need to chain, keep as-is
+            unchained.append(group[0])
+            continue
+
+        # Pick highest severity from the group
+        best_sev_rank = min(SEV_RANK.get(f.get("severity", "INFO").upper(), 4) for f in group)
+        best_sev = {v: k for k, v in SEV_RANK.items()}.get(best_sev_rank, "INFO")
+
+        # Collect all unique cookie/header/file names from the group titles
+        affected_items = []
+        all_urls = set()
+        all_evidence_parts = []
+        all_poc_parts = []
+        for f in group:
+            t = f.get("title", "")
+            # Extract the specific item (cookie name, header name, file name)
+            item_match = _re.search(r':\s*(\S+)\s*$', t)
+            if item_match:
+                affected_items.append(item_match.group(1))
+            elif t not in affected_items:
+                affected_items.append(t)
+            if f.get("url"):
+                all_urls.add(f["url"])
+            if f.get("evidence"):
+                all_evidence_parts.append(f"[{f.get('title', '')}]\n{f['evidence']}")
+            if f.get("poc"):
+                all_poc_parts.append(f"# {f.get('title', '')}\n{f['poc']}")
+
+        # Build merged finding
+        merged = {
+            "severity": best_sev,
+            "title": chain_title,
+            "url": next(iter(all_urls), group[0].get("url", "")),
+            "affected_endpoints": [{"url": u} for u in all_urls],
+            "method": group[0].get("method", ""),
+            "payload": ", ".join(affected_items),
+            "evidence": "\n\n".join(all_evidence_parts) if all_evidence_parts else group[0].get("evidence", ""),
+            "poc": "\n\n".join(all_poc_parts) if all_poc_parts else group[0].get("poc", ""),
+            "response": "\n\n---\n\n".join(
+                f"[{f.get('title', '')}]\n{f.get('response', '')}" for f in group if f.get("response")
+            ) or group[0].get("response", ""),
+            "request": "\n\n---\n\n".join(
+                f"[{f.get('title', '')}]\n{f.get('request', '')}" for f in group if f.get("request")
+            ) or group[0].get("request", ""),
+            "impact": group[0].get("impact", ""),
+            "remediation": group[0].get("remediation", ""),
+            "description": (
+                f"Multiple instances of this issue were identified affecting {len(group)} "
+                f"items: {', '.join(affected_items)}. "
+                + (group[0].get("description", "") or "")
+            ),
+            "chained_count": len(group),
+            "chained_items": affected_items,
+        }
+        unchained.append(merged)
+
+    all_findings = unchained
+
+    # ── Final sort: CRITICAL → HIGH → MEDIUM → LOW → INFO ─────────────
+    all_findings.sort(key=lambda f: SEV_RANK.get(f.get("severity", "INFO").upper(), 4))
 
     # ── Counts ────────────────────────────────────────────────────────
     counts = {}

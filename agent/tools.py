@@ -338,9 +338,16 @@ while True:
                     if _val:
                         _poc_buf.append(_val)
                     continue
-                if _re.match(r'Response\s*:|Server\s+Response\s*:', _sl_strip, _re.IGNORECASE):
+                if _re.match(r'(?:Full\s+)?Response\s*(?:\s*Headers)?\s*:|Server\s+Response\s*:', _sl_strip, _re.IGNORECASE):
                     _in_evidence, _in_poc, _in_response = False, False, True
-                    _val = _re.sub(r'^(?:Server\s+)?Response\s*:\s*', '', _sl_strip, flags=_re.IGNORECASE)
+                    _val = _re.sub(r'^(?:Full\s+)?(?:Server\s+)?Response\s*(?:\s*Headers)?\s*:\s*', '', _sl_strip, flags=_re.IGNORECASE)
+                    if _val:
+                        _response_buf.append(_val)
+                    continue
+                # Capture "Response Headers:" as a multi-line block for response_headers field
+                if _re.match(r'Response[_ ]?Headers\s*:', _sl_strip, _re.IGNORECASE):
+                    _in_evidence, _in_poc, _in_response = False, False, True
+                    _val = _re.sub(r'^Response[_ ]?Headers\s*:\s*', '', _sl_strip, flags=_re.IGNORECASE)
                     if _val:
                         _response_buf.append(_val)
                     continue

