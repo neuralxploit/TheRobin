@@ -19,6 +19,32 @@ You are **not** running TheRobin's AgentLoop — you ARE the agent.
 
 ---
 
+## MCP Tools (Recommended)
+
+TheRobin provides an MCP server that gives you **native pentest tools** — persistent Python REPL,
+headless browser with screenshots, HTTP requests, and OSINT. These are loaded automatically via `.mcp.json`.
+
+**Available MCP tools:**
+
+| Tool | What it does |
+|------|-------------|
+| `run_python` | Persistent Python REPL — variables survive between calls (like Jupyter) |
+| `bash` | Shell commands (nmap, curl, dig, whois) |
+| `web_request` | HTTP requests with parsed response (status, headers, cookies, body) |
+| `browser_action` | Headless Chromium — navigate, click, fill, screenshot (you can SEE the page) |
+| `write_file` | Save files to workspace |
+| `read_file` | Read files from workspace |
+| `osint_recon` | Passive OSINT — dorks, subdomains, DNS, whois, wayback |
+
+**PREFER MCP tools over built-in bash for testing.** Use `run_python` instead of `bash "python3 -c '...'"`.
+Use `browser_action` for screenshots and JS-heavy sites. Use `web_request` for quick HTTP checks.
+
+The MCP `run_python` tool maintains a persistent REPL — set `BASE = 'http://target.com'` once
+and it stays available in all subsequent calls. Already imported: requests, BeautifulSoup, re, json,
+base64, hashlib, socket, ssl, time, urljoin, urlparse, urlencode, quote, unquote, parse_qs.
+
+---
+
 ## Starting OpenCode
 
 OpenCode uses the `/init` command to analyze your project. For TheRobin:
@@ -42,18 +68,31 @@ pentest http://target.com admin/password123
 
 ---
 
-## Tool Mapping
+## Tool Mapping (Built-in + MCP)
 
-OpenCode uses lowercase tool names. Here's how to use them with TheRobin:
+OpenCode has built-in tools plus the MCP tools from TheRobin:
 
-| Claude Code | OpenCode | Usage |
-|-------------|----------|-------|
-| `Bash(command="...")` | `bash` | Run shell commands: `bash "python -c '...'"` |
-| `Read(file_path="...")` | `read` | Read files: `read agent/phases/phase_01_recon.md` |
-| `Write(file_path="...", content="...")` | `write` | Write files |
-| `Edit(file_path="...", old_string="...", new_string="...")` | `edit` | Edit files via string replacement |
-| `Glob(pattern="...")` | `glob` | Find files: `glob **/*.md` |
-| `Grep(pattern="...")` | `grep` | Search content: `grep "SQL Injection"` |
+**MCP tools (from robin-tools server — use these for pentesting):**
+
+| MCP Tool | Usage |
+|----------|-------|
+| `run_python(code="...")` | Persistent Python REPL for testing |
+| `bash(command="...")` | Shell commands (nmap, curl, dig) |
+| `web_request(url="...", method="GET")` | HTTP requests |
+| `browser_action(action="navigate", url="...")` | Headless browser with screenshots |
+| `write_file(path="...", content="...")` | Save files to workspace |
+| `read_file(path="...")` | Read workspace files |
+| `osint_recon(action="dork", query="...")` | OSINT reconnaissance |
+
+**Built-in tools (for reading project files):**
+
+| Tool | Usage |
+|------|-------|
+| `read` | Read files: `read agent/phases/phase_01_recon.md` |
+| `write` | Write files |
+| `edit` | Edit files via string replacement |
+| `glob` | Find files: `glob **/*.md` |
+| `grep` | Search content: `grep "SQL Injection"` |
 
 ---
 

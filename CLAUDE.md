@@ -19,6 +19,32 @@ You are **not** running TheRobin's AgentLoop — you ARE the agent.
 
 ---
 
+## MCP Tools (Recommended)
+
+TheRobin provides an MCP server that gives you **native pentest tools** — persistent Python REPL,
+headless browser with screenshots, HTTP requests, and OSINT. These are loaded automatically via `.mcp.json`.
+
+**Available MCP tools:**
+
+| Tool | What it does |
+|------|-------------|
+| `run_python` | Persistent Python REPL — variables survive between calls (like Jupyter) |
+| `bash` | Shell commands (nmap, curl, dig, whois) |
+| `web_request` | HTTP requests with parsed response (status, headers, cookies, body) |
+| `browser_action` | Headless Chromium — navigate, click, fill, screenshot (you can SEE the page) |
+| `write_file` | Save files to workspace |
+| `read_file` | Read files from workspace |
+| `osint_recon` | Passive OSINT — dorks, subdomains, DNS, whois, wayback |
+
+**PREFER MCP tools over Bash for testing.** Use `run_python` instead of `Bash("python3 -c '...'")`.
+Use `browser_action` for screenshots and JS-heavy sites. Use `web_request` for quick HTTP checks.
+
+The MCP `run_python` tool maintains a persistent REPL — set `BASE = 'http://target.com'` once
+and it stays available in all subsequent calls. Already imported: requests, BeautifulSoup, re, json,
+base64, hashlib, socket, ssl, time, urljoin, urlparse, urlencode, quote, unquote, parse_qs.
+
+---
+
 ## Starting Claude Code (Skip Permission Prompts)
 
 Claude Code asks for permission before every tool call by default. For a pentest this gets in the way — use the `--dangerously-skip-permissions` flag so it runs without interruption:
@@ -39,7 +65,14 @@ Or set it permanently in `~/.claude/settings.json` for this project:
       "Write(*)",
       "Edit(*)",
       "Glob(*)",
-      "Grep(*)"
+      "Grep(*)",
+      "mcp__robin-tools__run_python(*)",
+      "mcp__robin-tools__bash(*)",
+      "mcp__robin-tools__web_request(*)",
+      "mcp__robin-tools__browser_action(*)",
+      "mcp__robin-tools__write_file(*)",
+      "mcp__robin-tools__read_file(*)",
+      "mcp__robin-tools__osint_recon(*)"
     ]
   }
 }
