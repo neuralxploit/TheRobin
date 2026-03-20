@@ -57,9 +57,9 @@ def _next_uncompleted_phase(workspace_dir) -> str | None:
     return None
 
 # System prompt is ~30K tokens. Compact before hitting context limits.
-# 100K total = ~70K conversation on top of system prompt = 3-4 phases of work.
-# Mini snapshot is capped at 80K chars (~20K tokens) so summary calls are fast.
-_COMPACT_THRESHOLD = 100_000
+# 130K leaves ~100K for conversation = 5-6 phases of work before compacting.
+# Works well with large-context cloud models (kimi-k2.5, glm-4.7, qwen3.5).
+_COMPACT_THRESHOLD = 130_000
 
 # Minimum number of non-system messages before compaction is allowed.
 # Prevents compacting on the first message when there's nothing to compact.
