@@ -186,6 +186,36 @@ echo 'export ANTHROPIC_API_KEY=sk-ant-your-key-here' >> ~/.bashrc
 source ~/.bashrc
 ```
 
+### Option C: Claude Code (CLI) — No Setup Required
+
+**The fastest way to run TheRobin.** If you have [Claude Code](https://claude.ai/code) installed, you need no Ollama, no API key wiring, no virtual environment. Clone the repo, open it in Claude Code, and talk to it.
+
+```bash
+# Install Claude Code if you haven't already
+npm install -g @anthropic-ai/claude-code
+
+# Clone and open
+git clone https://github.com/neuralxploit/TheRobin.git
+cd TheRobin
+claude
+```
+
+Then just say:
+
+```
+pentest http://target.com admin/password123
+```
+
+Claude Code reads `CLAUDE.md` automatically and acts as the full pentest agent — it loads the phase guides, writes and runs test code via its built-in execution tools, tracks all findings, and generates the final PDF report. No model downloads, no config.
+
+| | TheRobin Loop (Options A/B) | Claude Code (Option C) |
+|---|---|---|
+| **Model** | Ollama / Anthropic API | Claude Code subscription |
+| **Setup** | `bash setup.sh` + model pull | `npm install -g @anthropic-ai/claude-code` |
+| **Interaction** | Autonomous — watch it run | Conversational — ask questions mid-test |
+| **Phases** | Full 29-phase auto-run | Full 29-phase, you can steer |
+| **Report** | Auto-generated at end | Ask "generate the report" anytime |
+
 <details>
 <summary><b>Available Models</b></summary>
 
