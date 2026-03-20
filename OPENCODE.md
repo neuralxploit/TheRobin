@@ -218,12 +218,62 @@ Reporting format: `agent/phases/reporting_rules.md`
 
 ---
 
-## After Context Compaction
+## Context Management (MANDATORY)
 
-If context is compacted mid-test:
-1. Read `workspace/<session>/plan.md` — find where you left off
-2. Read `agent/phases/rules_and_coding.md` — reload rules
-3. Continue from the last unchecked phase
+OpenCode does NOT have automatic context compaction. You MUST manage it yourself
+using the `compact_state` MCP tool. If you don't, you will hit the context limit
+and lose all progress.
+
+**RULE: Call `compact_state` after every 3-4 phases.** This saves your full state
+to `pentest_memory.md` so it can be recovered if the session ends.
+
+When calling `compact_state`, write a structured summary like this:
+
+```
+Target: http://127.0.0.1:5001
+Credentials: admin/admin123
+Authenticated: yes (cookie: session=abc123)
+JS-heavy app: no
+
+PHASES COMPLETED: 1, 2, 3, 4, 5, 6
+CURRENT PHASE: 7
+
+CONFIRMED FINDINGS:
+[CRITICAL] SQL Injection — http://target/login — username param — ' OR 1=1 --
+[HIGH] Stored XSS — http://target/profile — bio field — <script>alert(1)</script>
+[MEDIUM] Missing CSP Header — http://target — no Content-Security-Policy
+
+TESTED ENDPOINTS (do NOT re-test):
+POST /login — SQLi tested, XSS tested
+GET /api/users — IDOR tested, auth tested
+GET /search?q= — XSS tested, SQLi tested
+POST /profile — XSS tested, CSRF tested
+
+STILL TO TEST: Phases 7-29
+```
+
+**Checkpoint schedule:**
+- After Phase 4 → call `compact_state`
+- After Phase 8 → call `compact_state`
+- After Phase 12 → call `compact_state`
+- After Phase 16 → call `compact_state`
+- After Phase 20 → call `compact_state`
+- After Phase 24 → call `compact_state`
+- After Phase 28 → call `compact_state`
+
+---
+
+## Recovering a Session (continue pentest)
+
+If context gets too large or the session is interrupted, start a new OpenCode session
+and say: **"continue pentest"**
+
+The model will then:
+1. Read `workspace/<session>/pentest_memory.md` — full state from last checkpoint
+2. Read `workspace/<session>/plan.md` — which phases are done
+3. Read `agent/phases/rules_and_coding.md` — reload rules
+4. The REPL state (`_G` dict) auto-recovers from `.pentest_state.json`
+5. Continue from the next uncompleted phase without re-testing anything
 
 ---
 

@@ -143,5 +143,59 @@ def osint_recon(
     return tools.execute_tool("osint_recon", args)
 
 
+@mcp.tool()
+def compact_state(summary: str) -> str:
+    """CALL THIS EVERY 3-4 PHASES to save your progress. This is your memory.
+    Write a structured summary of everything done so far. Include:
+    - Target URL and credentials used
+    - Phases completed (by number)
+    - ALL confirmed findings (severity, title, URL, proof)
+    - ALL tested endpoints and what was tested on each
+    - Current session state (authenticated? cookies? JS-heavy?)
+    - What phase to continue with next
+
+    If context gets too large and the user starts a new session,
+    they can say 'continue pentest' and you read this file to recover.
+
+    This is NOT optional — call it after every 3-4 phases to checkpoint."""
+    import datetime
+    tools = _get_tools()
+    workspace = tools.WORKSPACE_DIR
+
+    # Find the active session directory
+    session_dir = workspace
+    try:
+        sessions = sorted(workspace.iterdir())
+        for d in reversed(sessions):
+            if d.is_dir() and "session" in d.name:
+                session_dir = d
+                break
+    except Exception:
+        pass
+
+    # Write the summary
+    memory_path = session_dir / "pentest_memory.md"
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    content = f"# Pentest Memory — Auto-Compacted\n"
+    content += f"Updated: {timestamp}\n\n"
+    content += summary
+
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
+    memory_path.write_text(content)
+
+    # Also save _G state via the REPL
+    tools.execute_tool("run_python", {"code": "_save_state()"})
+
+    return json.dumps({
+        "status": "saved",
+        "file": str(memory_path),
+        "message": (
+            f"State saved to {memory_path}. "
+            "If context gets too large, user can start a new session and say "
+            "'continue pentest' — you will read this file to recover all state."
+        ),
+    })
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
