@@ -2,208 +2,146 @@
 """
 TheRobin MCP Server — exposes pentest tools to Claude Code / OpenCode.
 
-Implements the Model Context Protocol (MCP) over stdio using JSON-RPC 2.0.
-No external dependencies — stdlib only, matching TheRobin's approach.
-
-Tools exposed:
-  run_python     — persistent Python REPL (variables survive between calls)
-  bash           — shell command execution
-  write_file     — save files to workspace
-  read_file      — read files from workspace
-  web_request    — HTTP requests with parsed responses
-  browser_action — headless Chromium with screenshots (returned as images)
-  osint_recon    — passive OSINT reconnaissance
+Uses the official MCP Python SDK for proper protocol handling.
+Tools are lazy-loaded on first call to avoid blocking startup.
 """
 
 import json
 import sys
-import base64
 import os
 
 # Ensure TheRobin's root is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from agent.tools import TOOL_SCHEMAS, execute_tool
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("robin-tools")
+
+# Lazy-loaded reference to agent.tools
+_tools_module = None
 
 
-# ── Convert OpenAI-style tool schemas to MCP format ──────────────────────────
-
-def _convert_schemas() -> list[dict]:
-    """Convert TheRobin's OpenAI-format TOOL_SCHEMAS to MCP tool definitions."""
-    mcp_tools = []
-    for schema in TOOL_SCHEMAS:
-        func = schema["function"]
-        mcp_tools.append({
-            "name": func["name"],
-            "description": func["description"],
-            "inputSchema": {
-                "type": "object",
-                "properties": func["parameters"].get("properties", {}),
-                "required": func["parameters"].get("required", []),
-            },
-        })
-    return mcp_tools
+def _get_tools():
+    global _tools_module
+    if _tools_module is None:
+        from agent import tools as _t
+        _tools_module = _t
+    return _tools_module
 
 
-MCP_TOOLS = _convert_schemas()
+# ── Tool Definitions ─────────────────────────────────────────────────────────
+
+@mcp.tool()
+def run_python(code: str) -> str:
+    """Execute Python code in a PERSISTENT session REPL — like a Jupyter notebook.
+    Variables, objects, and imports from PREVIOUS calls are still in scope.
+    Already available: requests, BeautifulSoup, re, json, base64, hashlib,
+    socket, ssl, time, urljoin, urlparse, urlencode, quote, unquote, parse_qs.
+    Print findings with [CRITICAL]/[HIGH]/[MEDIUM]/[LOW]/[INFO] labels."""
+    tools = _get_tools()
+    return tools.execute_tool("run_python", {"code": code})
 
 
-# ── MCP Protocol Handler ─────────────────────────────────────────────────────
-
-def _read_message() -> dict | None:
-    """Read a JSON-RPC message from stdin using Content-Length framing."""
-    headers = {}
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None  # EOF
-        line = line.decode("utf-8").strip()
-        if line == "":
-            break  # End of headers
-        if ":" in line:
-            key, val = line.split(":", 1)
-            headers[key.strip().lower()] = val.strip()
-
-    length = int(headers.get("content-length", 0))
-    if length == 0:
-        return None
-
-    body = sys.stdin.buffer.read(length)
-    return json.loads(body.decode("utf-8"))
+@mcp.tool()
+def bash(command: str) -> str:
+    """Execute a shell command. Use for nmap, curl, dig, whois, or other CLI tools.
+    Prefer run_python for HTTP testing."""
+    tools = _get_tools()
+    return tools.execute_tool("bash", {"command": command})
 
 
-def _send_message(msg: dict):
-    """Send a JSON-RPC message to stdout using Content-Length framing."""
-    body = json.dumps(msg).encode("utf-8")
-    header = f"Content-Length: {len(body)}\r\n\r\n"
-    sys.stdout.buffer.write(header.encode("utf-8"))
-    sys.stdout.buffer.write(body)
-    sys.stdout.buffer.flush()
+@mcp.tool()
+def write_file(path: str, content: str) -> str:
+    """Save content to a file in the workspace directory."""
+    tools = _get_tools()
+    return tools.execute_tool("write_file", {"path": path, "content": content})
 
 
-def _result(id, result: dict):
-    """Send a JSON-RPC success response."""
-    _send_message({"jsonrpc": "2.0", "id": id, "result": result})
+@mcp.tool()
+def read_file(path: str) -> str:
+    """Read a file from the workspace directory.
+    Use to analyze HTML pages, cookies, or data saved by browser_action."""
+    tools = _get_tools()
+    return tools.execute_tool("read_file", {"path": path})
 
 
-def _error(id, code: int, message: str):
-    """Send a JSON-RPC error response."""
-    _send_message({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
+@mcp.tool()
+def web_request(
+    url: str,
+    method: str = "GET",
+    headers: str = "{}",
+    data: str = "{}",
+    json_data: str = "{}",
+    cookies: str = "{}",
+    verify_ssl: bool = True,
+    allow_redirects: bool = True,
+    timeout: int = 30,
+) -> str:
+    """Quick HTTP request — returns status_code, headers, cookies, body (max 8KB),
+    final url, and redirect_history. For multi-step flows use run_python instead.
+    Pass headers/data/json_data/cookies as JSON strings."""
+    tools = _get_tools()
+    args = {"url": url, "method": method, "verify_ssl": verify_ssl,
+            "allow_redirects": allow_redirects, "timeout": timeout}
+    # Parse JSON string args back to dicts
+    for key, val in [("headers", headers), ("data", data),
+                     ("json_data", json_data), ("cookies", cookies)]:
+        try:
+            parsed = json.loads(val) if isinstance(val, str) else val
+            if parsed and parsed != {}:
+                args[key] = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return tools.execute_tool("web_request", args)
 
 
-def _notification(method: str, params: dict = None):
-    """Send a JSON-RPC notification (no id)."""
-    msg = {"jsonrpc": "2.0", "method": method}
-    if params:
-        msg["params"] = params
-    _send_message(msg)
+@mcp.tool()
+def browser_action(
+    action: str,
+    url: str = "",
+    selector: str = "",
+    by: str = "css",
+    value: str = "",
+    script: str = "",
+    filename: str = "",
+    seconds: float = 0,
+    timeout: int = 10,
+) -> str:
+    """Control a persistent headless Chromium browser with VISION support.
+    Use for JS-heavy sites, SPA login forms, React/Angular/Vue apps.
+    Actions: navigate, source, find_elements, fill, click, submit,
+    wait_for, execute_js, cookies, screenshot, wait, close.
+    navigate/click/submit/screenshot return a screenshot you can SEE."""
+    tools = _get_tools()
+    args = {"action": action}
+    if url: args["url"] = url
+    if selector: args["selector"] = selector
+    if by != "css": args["by"] = by
+    if value: args["value"] = value
+    if script: args["script"] = script
+    if filename: args["filename"] = filename
+    if seconds: args["seconds"] = seconds
+    if timeout != 10: args["timeout"] = timeout
+    return tools.execute_tool("browser_action", args)
 
 
-# ── Request Handlers ─────────────────────────────────────────────────────────
-
-def handle_initialize(id, params: dict):
-    """Handle the initialize handshake."""
-    _result(id, {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {
-            "tools": {"listChanged": False},
-        },
-        "serverInfo": {
-            "name": "robin-tools",
-            "version": "1.0.0",
-        },
-    })
-
-
-def handle_tools_list(id, params: dict):
-    """Return the list of available tools."""
-    _result(id, {"tools": MCP_TOOLS})
-
-
-def handle_tools_call(id, params: dict):
-    """Execute a tool and return the result."""
-    name = params.get("name", "")
-    args = params.get("arguments", {})
-
-    # Execute via TheRobin's existing handler
-    raw_result = execute_tool(name, args)
-
-    # Parse the JSON result
-    try:
-        result_data = json.loads(raw_result)
-    except (json.JSONDecodeError, TypeError):
-        result_data = {"output": raw_result}
-
-    # Check if this is a browser_action that returned a screenshot
-    content = []
-    screenshot_b64 = None
-
-    if isinstance(result_data, dict):
-        screenshot_b64 = result_data.pop("screenshot_base64", None)
-
-    # Add the text result
-    if isinstance(result_data, dict) and result_data.get("error"):
-        content.append({
-            "type": "text",
-            "text": f"Error: {result_data['error']}",
-        })
-        _result(id, {"content": content, "isError": True})
-        return
-
-    content.append({
-        "type": "text",
-        "text": json.dumps(result_data, indent=2, default=str),
-    })
-
-    # Add screenshot as an image if present
-    if screenshot_b64:
-        content.append({
-            "type": "image",
-            "data": screenshot_b64,
-            "mimeType": "image/png",
-        })
-
-    _result(id, {"content": content})
-
-
-# ── Main Loop ────────────────────────────────────────────────────────────────
-
-HANDLERS = {
-    "initialize": handle_initialize,
-    "notifications/initialized": lambda id, p: None,  # Client ack, ignore
-    "tools/list": handle_tools_list,
-    "tools/call": handle_tools_call,
-    "ping": lambda id, p: _result(id, {}),
-}
-
-
-def main():
-    """Run the MCP server — reads JSON-RPC messages from stdin, responds on stdout."""
-    # Redirect stderr so debug prints don't corrupt the protocol
-    log = open(os.path.join(os.path.dirname(__file__), "mcp_server.log"), "a")
-    sys.stderr = log
-
-    while True:
-        msg = _read_message()
-        if msg is None:
-            break  # EOF — client disconnected
-
-        method = msg.get("method", "")
-        id = msg.get("id")
-        params = msg.get("params", {})
-
-        handler = HANDLERS.get(method)
-        if handler:
-            try:
-                handler(id, params)
-            except Exception as e:
-                if id is not None:
-                    _error(id, -32603, str(e))
-                print(f"Error handling {method}: {e}", file=log, flush=True)
-        elif id is not None:
-            # Unknown method with an id — must respond
-            _error(id, -32601, f"Method not found: {method}")
+@mcp.tool()
+def osint_recon(
+    action: str,
+    target: str = "",
+    query: str = "",
+    max_results: int = 15,
+) -> str:
+    """Passive OSINT reconnaissance — no active scanning, all passive sources.
+    Actions: dork (DuckDuckGo), subdomains (crt.sh + DNS brute),
+    crtsh, dns, whois, wayback, harvester."""
+    tools = _get_tools()
+    args = {"action": action}
+    if target: args["target"] = target
+    if query: args["query"] = query
+    if max_results != 15: args["max_results"] = max_results
+    return tools.execute_tool("osint_recon", args)
 
 
 if __name__ == "__main__":
-    main()
+    mcp.run(transport="stdio")
