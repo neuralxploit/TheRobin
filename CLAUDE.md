@@ -51,7 +51,24 @@ Or set it permanently in `~/.claude/settings.json` for this project:
 
 ## How to Start a Test
 
-When the user gives you a target (e.g. "pentest http://target.com admin/pass"):
+The user will give you a target in one of these forms — parse accordingly:
+
+| User says | What to extract |
+|-----------|-----------------|
+| `pentest http://target.com` | BASE=http://target.com, no creds |
+| `pentest http://target.com admin/pass` | BASE=..., creds_a={username:admin, password:pass} |
+| `pentest http://target.com --cookie "session=abc; token=xyz"` | BASE=..., COOKIE=session=abc; token=xyz (skip login phase, use cookie on all requests) |
+| `pentest http://target.com admin/pass --cookie "..."` | BASE=..., creds_a=..., COOKIE=... |
+
+**Cookie auth:** When `--cookie` is provided, store it in `_G['COOKIE']` and attach it as the `Cookie:` header on every HTTP request. Skip the login brute-force part of Phase 3 (the user is already authenticated). Still run all other phases using the provided cookie.
+
+Store everything in `_G` before starting:
+```python
+_G['BASE']    = 'http://target.com'
+_G['COOKIE']  = 'session=abc123; token=xyz'   # if provided
+_G['creds_a'] = {'username': 'admin', 'password': 'pass'}  # if provided
+_G['creds_b'] = None  # second account for IDOR — requested in Phase 21
+```
 
 1. **Read the initialization guide first:**
    ```
