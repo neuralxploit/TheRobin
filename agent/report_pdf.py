@@ -1466,7 +1466,7 @@ def _build_zdl_risk_classification(title, sev, likelihood, sev_col_idx, sev_col_
     data = [
         [Paragraph("Likelihood", lbl_ps),      Paragraph(_xml_safe(lkl_text), body_ps)],
         [Paragraph("Severity", lbl_ps),         Paragraph(_xml_safe(sev_text), body_ps)],
-        [Paragraph("ZDL Assigned Risk", lbl_ps),
+        [Paragraph("Assigned Risk", lbl_ps),
          Paragraph(f"<b>{_xml_safe(risk_label)} ({risk_val:.2f})</b>", risk_ps)],
         [Paragraph("CVSS:3.1", lbl_ps),         Paragraph(_xml_safe(cvss_display), cvss_ps)],
     ]
