@@ -200,6 +200,12 @@ cd TheRobin
 claude
 ```
 
+**Skip permission prompts** — Claude Code asks to confirm every tool call by default. For a pentest this is constant interruption. Launch with:
+
+```bash
+claude --dangerously-skip-permissions
+```
+
 Then just say:
 
 ```

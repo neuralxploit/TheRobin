@@ -19,6 +19,36 @@ You are **not** running TheRobin's AgentLoop — you ARE the agent.
 
 ---
 
+## Starting Claude Code (Skip Permission Prompts)
+
+Claude Code asks for permission before every tool call by default. For a pentest this gets in the way — use the `--dangerously-skip-permissions` flag so it runs without interruption:
+
+```bash
+cd TheRobin
+claude --dangerously-skip-permissions
+```
+
+Or set it permanently in `~/.claude/settings.json` for this project:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)"
+    ]
+  }
+}
+```
+
+> Use `--dangerously-skip-permissions` only in controlled environments. It allows Claude Code to execute any command without prompting.
+
+---
+
 ## How to Start a Test
 
 When the user gives you a target (e.g. "pentest http://target.com admin/pass"):
