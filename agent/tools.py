@@ -408,6 +408,36 @@ while True:
             })
             _existing_titles.add(_title)
 
+        # Auto-log tested endpoints from stdout so after compaction the
+        # LLM knows what was already tested and doesn't re-test.
+        try:
+            _tested_log = WORKSPACE_DIR / "tested_endpoints.log"
+            _existing_tested = set()
+            if _tested_log.exists():
+                _existing_tested = set(_tested_log.read_text().splitlines())
+            _new_tested = []
+            for _line in _stdout_text.split('\n'):
+                # Capture "Testing GET/POST <url>" patterns from phase code
+                _tm = _re.match(r'\s*(?:Testing|Tested|testing)\s+(GET|POST|PUT|DELETE)?\s*(https?://\S+)', _line.strip())
+                if _tm:
+                    _entry = f"{(_tm.group(1) or 'GET').upper()} {_tm.group(2).split('?')[0]}"
+                    if _entry not in _existing_tested:
+                        _new_tested.append(_entry)
+                        _existing_tested.add(_entry)
+                # Also capture "Form: POST/GET <url>" from phase output
+                _fm = _re.match(r'\s*(?:\[?FORM\]?|Form):?\s*(GET|POST|PUT|DELETE)?\s*(https?://\S+)', _line.strip(), _re.IGNORECASE)
+                if _fm:
+                    _entry = f"{(_fm.group(1) or 'POST').upper()} {_fm.group(2).split('?')[0]}"
+                    if _entry not in _existing_tested:
+                        _new_tested.append(_entry)
+                        _existing_tested.add(_entry)
+            if _new_tested:
+                with open(_tested_log, 'a') as _tf:
+                    for _e in _new_tested:
+                        _tf.write(_e + '\n')
+        except Exception:
+            pass
+
         # Auto-save critical state after every execution
         _save_state()
 

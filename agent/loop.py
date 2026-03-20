@@ -65,34 +65,51 @@ _COMPACT_THRESHOLD = 100_000
 # Prevents compacting on the first message when there's nothing to compact.
 _MIN_MESSAGES_BEFORE_COMPACT = 10
 
-# 4 messages = last 2 tool call+result pairs. Small enough that:
-#   system(30K) + summary(2K) + recent(4K) = 36K < 80K threshold
-# So the rebuilt history never immediately re-triggers compaction.
-_KEEP_RECENT = 4
+# 8 messages = last 4 tool call+result pairs. Keeps more immediate context
+# so the model doesn't lose track of what it just did.
+#   system(30K) + summary(4K) + recent(8K) = 42K < 100K threshold
+_KEEP_RECENT = 8
 
 # Summary request sent to the LLM
-_SUMMARY_PROMPT = """STOP — do NOT call any tools. Write a SHORT summary (max 60 lines).
+_SUMMARY_PROMPT = """STOP — do NOT call any tools. Write a structured summary (max 100 lines).
 
 PENTEST MEMORY
 ==============
 Target: <url>
-Phases done: <list>
-Current phase: <number>
-Credentials: <user/pass used>
+BASE: <base url used in _G['BASE']>
+Phases COMPLETED: <list with phase numbers>
+Current/Next phase: <number>
+Credentials: <user/pass or cookie used>
 
-URLS FOUND (one per line, max 30):
-<urls>
+SESSION STATE:
+- _G keys set: <list the important keys like session, BASE, ALL_FORMS, AUTH_FORMS, AUTH_PARAMS, FINDINGS, etc.>
+- Authenticated: yes/no
+- JS-heavy app: yes/no
 
-CONFIRMED VULNS (one per line):
-[SEV] name — url — proof
+ENDPOINTS ALREADY TESTED (so we do NOT re-test):
+<list each endpoint + what was tested on it, e.g.:
+  POST /rest/user/login — SQLi tested, XSS tested
+  GET /api/products/search?q= — SQLi tested, XSS tested
+  POST /tools/ping — CMDi tested
+  max 40 lines>
+
+CONFIRMED FINDINGS (with severity and proof summary):
+[SEV] title — url — one-line proof
+<list ALL confirmed findings>
+
+NEGATIVE RESULTS (important — prevents re-testing):
+<list endpoints where nothing was found, max 20 lines>
 
 STILL TO TEST:
-<remaining phases>
+<remaining phases by number>
 
-Next action: read plan.md then continue phase <N>
+CRITICAL: After compaction, the agent MUST:
+1. read plan.md to see exactly where it left off
+2. NOT re-test any endpoint listed above
+3. Continue with the next uncompleted phase
 ==============
 
-Be CONCISE. Only confirmed findings. No filler. Write it now."""
+Be STRUCTURED. Include ALL findings AND tested endpoints. Write it now."""
 
 
 def _dumb_compact(history: list[dict]) -> list[dict]:
@@ -483,8 +500,10 @@ class AgentLoop:
                     "content": (
                         "Context compacted. Your PENTEST MEMORY above has all findings and state. "
                         f"Workspace directory: {_ws}\n"
-                        "read_file('plan.md') to see which phases are done and what was found. "
-                        "Also read_file('findings.log') for full finding list. "
+                        "MANDATORY — read these files before continuing:\n"
+                        "  1. read_file('plan.md') — see which phases are done\n"
+                        "  2. read_file('findings.log') — all confirmed findings\n"
+                        "  3. read_file('tested_endpoints.log') — endpoints already tested (DO NOT re-test)\n"
                         "Then continue with the next uncompleted phase IMMEDIATELY. "
                         "Do NOT stop. Do NOT ask the user anything. Do NOT say 'Ready to proceed?' "
                         f"Just start the next phase right now.{phase_hint}"
