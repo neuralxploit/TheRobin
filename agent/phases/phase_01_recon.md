@@ -132,11 +132,14 @@
                 for f in fields:
                     print(f"         field: {f['name']} ({f['type']})")
 
-    # BFS crawl
-    while queue:
+    # BFS crawl — max 300 pages to prevent explosion on large sites
+    MAX_PAGES = 300
+    while queue and len(visited) < MAX_PAGES:
         url = queue.pop(0)
         spider_page(url)
-        time.sleep(0.1)  # polite delay
+        time.sleep(0.15)  # polite delay
+    if len(visited) >= MAX_PAGES:
+        print(f"  [INFO] Spider stopped at {MAX_PAGES} pages — site is large, continuing with collected data")
 
     # ── Deduplicate parameterized URLs ──────────────────────────
     # /admin/user/1/edit, /admin/user/2/edit, /profile/3/edit are

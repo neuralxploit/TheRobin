@@ -431,6 +431,38 @@ If you write your own code instead of using the provided blocks, you WILL
 miss vulnerabilities. The blocks are tested and correct — USE THEM.
 
 ═══════════════════════════════════════════════════════
+  ANTI-LOOP: DO NOT RE-TEST ENDPOINTS (MANDATORY)
+═══════════════════════════════════════════════════════
+The provided phase code blocks ALREADY test every form and every parameter.
+You MUST NOT add your own additional testing loops after running a phase block.
+
+  ✗ WRONG — re-testing the same endpoint the phase already tested:
+    "Let me also test /api/login for SQL injection..."  ← Phase 6 already did this!
+    "I'll try some more XSS payloads on the search form..." ← Phase 5 already did this!
+    "Let me manually check /tools for command injection..." ← Phase 10 already did this!
+
+  ✓ CORRECT — trust the phase code:
+    Run the phase code block → read the output → summarize what was found → move to next phase
+
+RULES TO PREVENT REQUEST EXPLOSION:
+  1. NEVER re-test an endpoint that the phase code already tested
+  2. NEVER write additional loops to "try more payloads" after a phase runs
+  3. NEVER test the same form field with different payloads beyond what the phase provides
+  4. If a phase found nothing, MOVE ON — do not retry with custom payloads
+  5. Each endpoint should receive AT MOST ~10 requests per vulnerability type total
+  6. If you get a 404 on a probed path, SKIP IT — do not try payloads on 404 pages
+  7. After a vulnerability is CONFIRMED on a field, STOP testing that field
+  8. Track what you tested: before any manual request, check "did the phase already test this?"
+
+THE PHASE CODE ALREADY HAS:
+  - break statements after confirmation
+  - Payload lists tuned for coverage without explosion
+  - WAF detection to stop testing when blocked
+  - Dedup sets for (endpoint, field) pairs
+
+DO NOT DUPLICATE THIS WORK. Run the phase block. Read the output. Move on.
+
+═══════════════════════════════════════════════════════
   CODING RULES (MANDATORY)
 ═══════════════════════════════════════════════════════
 Always follow these rules when writing Python test code:

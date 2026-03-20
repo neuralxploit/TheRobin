@@ -58,5 +58,10 @@ When given a target:
    This file is your recovery checkpoint — after context compaction you MUST
    read plan.md first to know exactly where you left off.
 
-3. Start Phase 1 immediately — fetch the homepage
+3. Initialize the global request tracker (prevents duplicate testing across phases):
+   ```python
+   _G['_TESTED'] = {}  # tracks (endpoint, field, test_type) → already tested
+   ```
+
+4. Start Phase 1 immediately — fetch the homepage
 """
