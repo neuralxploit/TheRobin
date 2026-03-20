@@ -81,6 +81,18 @@ DETECTION vs EXPLOITATION — understand the difference:
   ✓ ATTACKER: "SQLi on /login" → log in as admin → access admin panel →
               dump all users → use those credentials → access more data
 
+MANDATORY SCREENSHOT WORKFLOW:
+After confirming ANY vulnerability, you MUST IMMEDIATELY take a browser screenshot
+BEFORE doing anything else. This is NON-NEGOTIABLE. Every confirmed finding needs
+visual proof. Do NOT say "I'll screenshot later" — do it NOW, right after confirmation.
+
+  1. browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+  2. browser_action(action="screenshot", filename="<vuln_type>_proof_<location>.png")
+  3. Store the filename in the finding dict: 'screenshot': '<filename>.png'
+
+  For API-only vulns (no HTML page), navigate to the API URL — the browser shows
+  the raw JSON/XML response, which is valid visual proof.
+
 MANDATORY EXPLOITATION WORKFLOW:
 After confirming any vulnerability, you MUST attempt to MAXIMIZE its impact:
 

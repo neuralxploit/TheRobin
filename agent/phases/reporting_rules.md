@@ -162,6 +162,32 @@ SCREENSHOT EVIDENCE — VISUAL PROOF FOR CONFIRMED VULNERABILITIES:
 
 INLINE PRINT PATTERN — every time a finding is confirmed:
 
+  STEP 0 — IMMEDIATELY take a screenshot (BEFORE anything else):
+  As soon as you confirm a vulnerability, your VERY NEXT action must be
+  browser_action to capture visual proof. Do NOT skip this. Do NOT delay it.
+  Do NOT say "I'll screenshot later". The screenshot MUST happen NOW.
+
+  # IMMEDIATELY after confirming the vuln:
+  browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+  browser_action(action="screenshot", filename="<vuln_type>_proof_<location>.png")
+  # Examples:
+  #   sqli_proof_login.png, xss_proof_search.png, idor_proof_users.png
+  #   cmdi_proof_ping.png, ssti_proof_template.png, ssrf_proof_api.png
+  #   auth_bypass_proof_admin.png, data_exposure_proof_users.png
+
+  For each vulnerability type, navigate to the right URL:
+  - XSS: navigate to the URL with the payload in the parameter
+  - SQLi bypass: navigate to the admin/dashboard page you gained access to
+  - IDOR: navigate to the other user's resource you accessed
+  - Data exposure: navigate to the API endpoint leaking data
+  - CMDi/SSTI/SSRF: navigate to the URL showing the injected output
+  - Auth bypass: navigate to the protected page without credentials
+  - Missing headers: navigate to the homepage (shows the response)
+
+  If the vulnerability is API-only (no visual page), take a screenshot of
+  the raw response by navigating to the API URL directly — the browser will
+  show the JSON/XML response which serves as visual proof.
+
   STEP 1 — Print the full finding block to the console (so it's visible):
   NOTE: The title after FINDING: MUST follow Rule #5 — professional class name only!
 
@@ -220,7 +246,11 @@ print(r.status_code, r.url)""",
       'response':      f"HTTP/1.1 {r.status_code}\n" + '\n'.join(f'{k}: {v}' for k, v in r.headers.items()) + "\n\n" + r.text,
       'impact':        'Authentication bypass — attacker can log in as any user without a valid password',
       'remediation':   'Use parameterised queries / prepared statements. Never concatenate user input into SQL strings.',
+      'screenshot':    'sqli_proof_login.png',   # ← from STEP 0 screenshot
   })
+
+  REMINDER: You already took the screenshot in STEP 0 above. The filename you used
+  there goes in the 'screenshot' field here. If you forgot STEP 0, go back and do it NOW.
 
 ═══════════════════════════════════════════════════════
   WHAT IS NEVER A FINDING — MEMORISE THIS LIST
