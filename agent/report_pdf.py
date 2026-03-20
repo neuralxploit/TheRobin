@@ -650,98 +650,102 @@ import re as _re
 # Exact substring → professional replacement (checked longest-first)
 _TITLE_REWRITES: dict[str, str] = {
     # JWT issues
-    "JWT token is expired":                     "Insecure JSON Web Token (JWT) Configuration: Expired Token Accepted",
-    "JWT secret could be weak":                 "Weak JWT Signing Secret",
-    "JWT secret could be weak - recommend testing with common secrets":
-                                                "Weak JWT Signing Secret: Common Secret Suspected",
+    "JWT token is expired":                     "Weak JWT Configuration",
+    "JWT secret could be weak":                 "Weak JWT Secret",
+    "JWT secret could be weak - recommend testing with common secrets": "Weak JWT Secret",
     # Internal endpoints / JS secrets
-    "JS: INTERNAL_ENDPOINT":                    "Information Disclosure: Internal Endpoint in JavaScript",
-    "JS Secret: INTERNAL_ENDPOINT":             "Information Disclosure: Internal Endpoint in JavaScript",
+    "JS: INTERNAL_ENDPOINT":                    "Information Disclosure",
+    "JS Secret: INTERNAL_ENDPOINT":             "Information Disclosure",
     # Raw tool confirmations
-    "XSS CONFIRMED - payload reflected unescaped!": "Reflected Cross-Site Scripting (XSS)",
-    "XSS CONFIRMED":                            "Reflected Cross-Site Scripting (XSS)",
+    "XSS CONFIRMED - payload reflected unescaped!": "Reflected XSS",
+    "XSS CONFIRMED":                            "Reflected XSS",
     # robots / sitemap
-    "Sensitive File Exposed: /robots.txt":      "Information Disclosure: robots.txt File Publicly Accessible",
-    "Sensitive File Exposed: /sitemap.xml":      "Information Disclosure: sitemap.xml File Publicly Accessible",
-    "Sensitive File Exposed: /package.json":     "Sensitive File Exposure: package.json Publicly Accessible",
+    "Sensitive File Exposed: /robots.txt":      "Sensitive File Exposure",
+    "Sensitive File Exposed: /sitemap.xml":      "Sensitive File Exposure",
+    "Sensitive File Exposed: /package.json":     "Sensitive File Exposure",
     # API docs
-    "API Documentation Exposed":                "Information Disclosure: API Documentation Publicly Accessible",
+    "API Documentation Exposed":                "API Documentation Exposed",
 }
 
 # Regex patterns → replacement template (use \1, \2, etc. for groups)
 # IMPORTANT: Titles should be CLEAN vulnerability class names only.
 # Technical details (params, fields, endpoints, methods) go in the description.
 _TITLE_PATTERNS: list[tuple[str, str]] = [
-    # "JS Secret: <type> in <filename>" → clean class name
-    (r"(?i)^JS\s*Secret:\s*INTERNAL_ENDPOINT\s+in\s+.+$",
-     r"Information Disclosure: Internal Endpoint in JavaScript"),
-    (r"(?i)^JS\s*Secret:\s*API_KEY\s+in\s+.+$",
-     r"Information Disclosure: API Key Exposed in JavaScript"),
-    (r"(?i)^JS\s*Secret:\s*(\w+)\s+in\s+.+$",
-     r"Information Disclosure: \1 Exposed in JavaScript"),
-    # "SQL Injection (error-based) — target via POST" → just "SQL Injection"
-    (r"(?i)^SQL Injection\s*\(?[^)]*\)?\s*[—–-]\s*.+$",
-     r"SQL Injection"),
-    (r"(?i)^SQL Injection\s*[—–-]\s*.+$",
-     r"SQL Injection"),
-    (r"(?i)^SQL Injection\s*\(.+\)$",
-     r"SQL Injection"),
-    # "Command Injection — tools target parameter" → just "Command Injection"
-    (r"(?i)^Command Injection\s*[—–-]\s*.+$",
-     r"Command Injection"),
-    (r"(?i)^Command Injection\s*:?\s*\w+\s+.+$",
-     r"Command Injection"),
-    # "XSS — Reflected in search_param" → "Reflected Cross-Site Scripting (XSS)"
-    (r"(?i)^XSS\s*[—–-]\s*Reflected\b.*$",
-     r"Reflected Cross-Site Scripting (XSS)"),
-    (r"(?i)^XSS\s*[—–-]\s*Stored\b.*$",
-     r"Stored Cross-Site Scripting (XSS)"),
-    (r"(?i)^XSS\s*[—–-]\s*DOM\b.*$",
-     r"DOM-Based Cross-Site Scripting (XSS)"),
-    (r"(?i)^XSS\s*[—–-]\s*.+$",
-     r"Cross-Site Scripting (XSS)"),
-    # "Reflected XSS in Forgot Password Form" → clean
-    (r"(?i)^Reflected XSS\b.*$",
-     r"Reflected Cross-Site Scripting (XSS)"),
-    (r"(?i)^Stored XSS\b.*$",
-     r"Stored Cross-Site Scripting (XSS)"),
-    (r"(?i)^DOM XSS\b.*$",
-     r"DOM-Based Cross-Site Scripting (XSS)"),
-    # "IDOR — Horizontal Access via /api/users/123" → just category
-    (r"(?i)^IDOR\s*[—–-]\s*(.+)$",
-     r"Insecure Direct Object Reference (IDOR)"),
-    # "SSRF — <details>" → clean
-    (r"(?i)^SSRF\s*[—–-]\s*.+$",
-     r"Server-Side Request Forgery (SSRF)"),
-    # "SSTI — <details>" → clean
-    (r"(?i)^SSTI\s*[—–-]\s*.+$",
-     r"Server-Side Template Injection (SSTI)"),
-    # "CSRF — <details>" → clean
-    (r"(?i)^CSRF\s*[—–-]\s*.+$",
-     r"Cross-Site Request Forgery (CSRF)"),
-    # Missing Security Header — keep the header name (it's the category)
-    (r"(?i)^Missing Security Header:\s*(.+)$",
-     r"Missing HTTP Security Header: \1"),
-    # Server Version Disclosure — keep the banner
-    (r"(?i)^Server Version Disclosure:\s*(?:Server:\s*)?(.+)$",
-     r"Server Version Disclosure"),
-    # "Sensitive File Exposed: <path>" → clean
-    (r"(?i)^Sensitive File Exposed:\s*(.+)$",
-     r"Sensitive File Exposure"),
-    # "Cookie Missing Secure Flag: refresh_token" → clean
-    (r"(?i)^Cookie Missing\s+(Secure Flag|HttpOnly):\s*(.+)$",
-     r"Cookie \1 Not Set"),
-    # Strip trailing technical noise
-    (r"(?i)\s*-\s*recommend\s+testing\s+with\s+.*$", ""),
-    (r"(?i)\s+CONFIRMED\b", ""),
-    # Strip "via POST", "via GET", "via <method>" from end
+    # JS secrets → "Information Disclosure"
+    (r"(?i)^JS\s*Secret:.*$", r"Information Disclosure"),
+    (r"(?i)^JS:\s*.+$", r"Information Disclosure"),
+    # SQL Injection + any details → "SQL Injection"
+    (r"(?i)^SQL Injection\b.*$", r"SQL Injection"),
+    (r"(?i)^SQLi\b.*$", r"SQL Injection"),
+    # Command Injection + any details → "Command Injection"
+    (r"(?i)^Command Injection\b.*$", r"Command Injection"),
+    (r"(?i)^OS Command Injection\b.*$", r"Command Injection"),
+    (r"(?i)^CMDi\b.*$", r"Command Injection"),
+    # XSS variants → short names
+    (r"(?i)^(?:XSS|Cross.Site Scripting)\s*[—–:-]\s*Reflected\b.*$", r"Reflected XSS"),
+    (r"(?i)^(?:XSS|Cross.Site Scripting)\s*[—–:-]\s*Stored\b.*$", r"Stored XSS"),
+    (r"(?i)^(?:XSS|Cross.Site Scripting)\s*[—–:-]\s*DOM\b.*$", r"DOM XSS"),
+    (r"(?i)^(?:XSS|Cross.Site Scripting)\b.*$", r"XSS"),
+    (r"(?i)^Reflected\s+(?:Cross.Site Scripting|XSS)\b.*$", r"Reflected XSS"),
+    (r"(?i)^Stored\s+(?:Cross.Site Scripting|XSS)\b.*$", r"Stored XSS"),
+    (r"(?i)^DOM.?(?:Based)?\s*(?:Cross.Site Scripting|XSS)\b.*$", r"DOM XSS"),
+    # IDOR → "IDOR"
+    (r"(?i)^IDOR\b.*$", r"IDOR"),
+    (r"(?i)^Insecure Direct Object\b.*$", r"IDOR"),
+    # SSRF → "SSRF"
+    (r"(?i)^SSRF\b.*$", r"SSRF"),
+    (r"(?i)^Server.Side Request Forgery\b.*$", r"SSRF"),
+    # SSTI → "Template Injection"
+    (r"(?i)^SSTI\b.*$", r"Template Injection"),
+    (r"(?i)^Server.Side Template Injection\b.*$", r"Template Injection"),
+    # CSRF → "CSRF"
+    (r"(?i)^CSRF\b.*$", r"CSRF"),
+    (r"(?i)^Cross.Site Request Forgery\b.*$", r"CSRF"),
+    # Missing headers → short
+    (r"(?i)^Missing Security Header\b.*$", r"Missing Security Header"),
+    (r"(?i)^Missing.*HSTS\b.*$", r"Missing HSTS"),
+    (r"(?i)^Missing.*Content.Security.Policy\b.*$", r"Missing CSP"),
+    (r"(?i)^Missing.*X.Frame\b.*$", r"Missing X-Frame-Options"),
+    # Server disclosure
+    (r"(?i)^Server Version Disclosure\b.*$", r"Server Version Disclosure"),
+    # Sensitive files → "Sensitive File Exposure"
+    (r"(?i)^Sensitive File Exposed?\b.*$", r"Sensitive File Exposure"),
+    # Cookies → short
+    (r"(?i)^Cookie.*Missing.*HttpOnly\b.*$", r"Missing HttpOnly Flag"),
+    (r"(?i)^Cookie.*Missing.*Secure\b.*$", r"Missing Secure Flag"),
+    (r"(?i)^Cookie.*Missing.*SameSite\b.*$", r"Missing SameSite Flag"),
+    (r"(?i)^Cookie.*HttpOnly\s*Not\s*Set\b.*$", r"Missing HttpOnly Flag"),
+    (r"(?i)^Cookie.*Secure\s*Not\s*Set\b.*$", r"Missing Secure Flag"),
+    (r"(?i)^Insecure Cookie\b.*HttpOnly\b.*$", r"Missing HttpOnly Flag"),
+    (r"(?i)^Insecure Cookie\b.*Secure\b.*$", r"Missing Secure Flag"),
+    # Other common → short
+    (r"(?i)^Open Redirect\b.*$", r"Open Redirect"),
+    (r"(?i)^Directory Listing\b.*$", r"Directory Listing"),
+    (r"(?i)^Default Credentials\b.*$", r"Default Credentials"),
+    (r"(?i)^Insecure Deserialization\b.*$", r"Insecure Deserialization"),
+    (r"(?i)^GraphQL Introspection\b.*$", r"GraphQL Introspection"),
+    (r"(?i)^Race Condition\b.*$", r"Race Condition"),
+    (r"(?i)^XXE\b.*$", r"XXE"),
+    (r"(?i)^XML External Entity\b.*$", r"XXE"),
+    (r"(?i)^Path Traversal\b.*$", r"Path Traversal"),
+    (r"(?i)^File Upload\b.*$", r"File Upload"),
+    (r"(?i)^Account Enumeration\b.*$", r"Account Enumeration"),
+    (r"(?i)^Account Lockout\b.*$", r"Missing Account Lockout"),
+    (r"(?i)^No Account Lockout\b.*$", r"Missing Account Lockout"),
+    (r"(?i)^CORS\b.*$", r"CORS Misconfiguration"),
+    (r"(?i)^Information Disclosure\b.*$", r"Information Disclosure"),
+    (r"(?i)^API Documentation\b.*$", r"API Documentation Exposed"),
+    # Strip ALL trailing noise: "— details", "(details)", "via POST", ": cookie_name"
+    (r"(?i)\s*[—–-]\s+.+$", ""),
+    (r"(?i)\s*:\s+\S+\s*$", ""),
     (r"(?i)\s+via\s+(GET|POST|PUT|DELETE|PATCH)\s*$", ""),
-    # Strip "(field=...)", "(param=...)" from end
-    (r"\s*\([^)]*(?:field|param|target|endpoint|url)=[^)]*\)\s*$", ""),
-    # Strip trailing " — <target> via <method>" patterns
-    (r"(?i)\s*[—–-]\s*\S+\s+via\s+\w+\s*$", ""),
-    # Strip trailing " — <anything with slashes>" (URL-like details)
-    (r"(?i)\s*[—–-]\s*\S*/\S+.*$", ""),
+    (r"\s*\([^)]*\)\s*$", ""),
+    (r"(?i)\s+CONFIRMED\b.*$", ""),
+    (r"(?i)\s+FOUND\b.*$", ""),
+    (r"(?i)\s*-\s*recommend\b.*$", ""),
+    (r"(?i)\s+in\s+\S+$", ""),
+    (r"(?i)\s+on\s+\S+$", ""),
+    (r"(?i)\s+at\s+\S+$", ""),
 ]
 
 
@@ -755,11 +759,13 @@ def _llm_normalize_title(raw_title: str) -> str:
     try:
         import os
         prompt = (
-            "Rewrite this raw vulnerability finding title into a professional "
-            "pentest report title. Use standard OWASP/CWE naming conventions. "
-            "Do NOT include parameter names, file paths, HTTP methods, or URLs. "
-            "Return ONLY the clean title, nothing else.\n\n"
-            f"Raw title: {raw_title}\n\nProfessional title:"
+            "Rewrite this raw vulnerability title into a SHORT pentest report title. "
+            "MAX 3-4 words. Just the vulnerability class name. "
+            "Examples: 'SQL Injection', 'Reflected XSS', 'SSRF', 'IDOR', 'Command Injection', "
+            "'Missing HSTS', 'Weak JWT Secret', 'Information Disclosure', 'CSRF'. "
+            "Do NOT include parameter names, file paths, HTTP methods, URLs, or location details. "
+            "Return ONLY the short title, nothing else.\n\n"
+            f"Raw title: {raw_title}\n\nShort title:"
         )
 
         # Try Claude API first (if key available)
@@ -2757,16 +2763,19 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
     # e.g., "Cookie Missing HttpOnly: session_id" + "Cookie Missing HttpOnly: csrf_token"
     # → ONE finding "Insecure Cookie Configuration: Missing HttpOnly Flag" with all cookies listed
     _CHAIN_PATTERNS = {
-        r'(?i)cookie.*missing.*httponly': 'Insecure Cookie Configuration: Missing HttpOnly Flag',
-        r'(?i)cookie.*missing.*secure\s*flag': 'Insecure Cookie Configuration: Missing Secure Flag',
-        r'(?i)cookie.*missing.*samesite': 'Insecure Cookie Configuration: Missing SameSite Attribute',
-        r'(?i)cookie.*httponly\s*not\s*set': 'Insecure Cookie Configuration: Missing HttpOnly Flag',
-        r'(?i)cookie.*secure\s*not\s*set': 'Insecure Cookie Configuration: Missing Secure Flag',
-        r'(?i)missing.*security.*header': 'Missing HTTP Security Headers',
+        r'(?i)cookie.*missing.*httponly': 'Missing HttpOnly Flag',
+        r'(?i)cookie.*missing.*secure\s*flag': 'Missing Secure Flag',
+        r'(?i)cookie.*missing.*samesite': 'Missing SameSite Flag',
+        r'(?i)cookie.*httponly\s*not\s*set': 'Missing HttpOnly Flag',
+        r'(?i)cookie.*secure\s*not\s*set': 'Missing Secure Flag',
+        r'(?i)missing.*(httponly|http.only)': 'Missing HttpOnly Flag',
+        r'(?i)missing.*(secure flag|secure$)': 'Missing Secure Flag',
+        r'(?i)missing.*samesite': 'Missing SameSite Flag',
+        r'(?i)missing.*security.*header': 'Missing Security Headers',
         r'(?i)server.*version.*disclos': 'Server Version Disclosure',
         r'(?i)sensitive.*file.*expos': 'Sensitive File Exposure',
-        r'(?i)information.*disclosure.*javascript': 'Information Disclosure: Secrets in JavaScript',
-        r'(?i)js.*secret': 'Information Disclosure: Secrets in JavaScript',
+        r'(?i)information.*disclosure': 'Information Disclosure',
+        r'(?i)js.*secret': 'Information Disclosure',
     }
 
     chained: dict[str, list] = {}  # chain_title → list of findings

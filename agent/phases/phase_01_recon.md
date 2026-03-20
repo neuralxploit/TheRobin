@@ -76,14 +76,19 @@
     ALL_FORMS = []    # list of {url, method, action, fields: [{name, type, value}]}
     ALL_LINKS = set() # every href found
 
+    # Scope check: target domain + subdomains only
+    _base_host = urlparse(BASE).netloc.split(':')[0].lstrip('www.')
+
+    def _in_scope(check_url):
+        h = urlparse(check_url).netloc.split(':')[0].lstrip('www.')
+        return h == _base_host or h.endswith('.' + _base_host)
+
     def spider_page(url):
         url = url.split('#')[0].rstrip('/')  # strip anchors, trailing slash
         if url in visited:
             return
-        parsed = urlparse(url)
-        base_parsed = urlparse(BASE)
-        # Only crawl same host
-        if parsed.netloc and parsed.netloc != base_parsed.netloc:
+        # SCOPE CHECK — only crawl target domain and its subdomains
+        if not _in_scope(url):
             return
         visited.add(url)
         try:

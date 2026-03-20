@@ -1,49 +1,55 @@
 ═══════════════════════════════════════════════════════
-  RULE #5 — PROFESSIONAL FINDING TITLES (MANDATORY)
+  RULE #5 — SHORT FINDING TITLES (MANDATORY)
 ═══════════════════════════════════════════════════════
-Every finding title MUST be a PROFESSIONAL vulnerability class name — the kind
-you would see in a real pentest report from a top security firm.
+Finding titles MUST be SHORT and SIMPLE — just the vulnerability class name.
+NO details about WHERE the issue occurs. The location goes in the finding body, NOT the title.
 
-  ✗ WRONG — raw tool output as title:
-    "JS: INTERNAL_ENDPOINT"
-    "JWT token is expired"
+  ✗ WRONG — too long, contains location details:
     "SQL Injection (error-based) — /api/login via POST"
     "Command Injection: tools target parameter"
-    "XSS CONFIRMED - payload reflected unescaped!"
+    "XSS — Reflected in search_param"
     "Cookie Missing Secure Flag: refresh_token"
     "Sensitive File Exposed: /robots.txt"
-
-  ✓ CORRECT — professional vulnerability class names:
+    "IDOR — /api/users/123 via GET"
+    "SSRF via url param in /fetch"
+    "CSRF token missing on /settings POST"
+    "JS: INTERNAL_ENDPOINT"
     "Information Disclosure: Internal Endpoint Exposed in JavaScript"
-    "Insecure JSON Web Token (JWT) Configuration"
-    "SQL Injection — Authentication Bypass"
-    "OS Command Injection"
-    "Reflected Cross-Site Scripting (XSS)"
-    "Insecure Cookie Configuration: Missing Secure Flag"
-    "Sensitive File Exposure: robots.txt"
+
+  ✓ CORRECT — short, clean, just the vulnerability name:
+    "SQL Injection"
+    "Command Injection"
+    "Reflected XSS"
+    "Missing HttpOnly Flag"
+    "Sensitive File Exposure"
+    "IDOR"
+    "SSRF"
+    "CSRF"
+    "Information Disclosure"
+    "Weak JWT Secret"
 
 TITLE RULES:
-  1. Use the standard vulnerability class name (OWASP / CWE naming conventions)
-  2. You may add a SHORT qualifier after ":" or "—" (e.g. "SQL Injection — Authentication Bypass")
-  3. NEVER include: parameter names, field names, file paths, HTTP methods, endpoint URLs
-  4. NEVER include: raw tool output, status codes, "CONFIRMED", "FOUND", technical noise
-  5. Think: "What would a CISO read in a board presentation?" — that's your title
-  6. When in doubt, use the OWASP Top 10 category name
+  1. MAX 3-4 WORDS. Just the vulnerability class name.
+  2. NEVER include: URLs, paths, parameters, field names, HTTP methods, filenames
+  3. NEVER include: "in", "via", "on", "at" + location details
+  4. NEVER include: raw tool output, status codes, "CONFIRMED", "FOUND"
+  5. Where the issue occurs goes in the "Hosts Affected" and "Description" sections
+  6. Keep it simple enough for a CISO slide deck
 
-MORE EXAMPLES of ugly → professional:
-  "XSS — Reflected in search_param"       → "Reflected Cross-Site Scripting (XSS)"
-  "IDOR — /api/users/123 via GET"         → "Insecure Direct Object Reference (IDOR)"
-  "SSRF via url param in /fetch"           → "Server-Side Request Forgery (SSRF)"
-  "SSTI confirmed in template engine"      → "Server-Side Template Injection (SSTI)"
-  "Missing HSTS header"                    → "Missing HTTP Strict Transport Security (HSTS)"
-  "Server: Apache/2.4.41 disclosed"        → "Server Version Disclosure"
-  "Default admin:admin credentials work"   → "Default Credentials: Administrative Access"
-  "Open redirect via next= parameter"      → "Unvalidated Redirect"
-  "CSRF token missing on /settings POST"   → "Cross-Site Request Forgery (CSRF)"
-  "Pickle deserialization RCE"             → "Insecure Deserialization: Remote Code Execution"
-  "Directory listing on /uploads/"         → "Directory Listing Enabled"
-  "GraphQL introspection enabled"          → "GraphQL Introspection Enabled"
-  "Race condition on coupon redemption"    → "Race Condition: Business Logic Bypass"
+MORE EXAMPLES — ugly → clean:
+  "SQL Injection (error-based) — target via POST"  → "SQL Injection"
+  "SSTI confirmed in template engine"               → "Template Injection"
+  "Missing HSTS header"                              → "Missing HSTS"
+  "Server: Apache/2.4.41 disclosed"                  → "Server Version Disclosure"
+  "Default admin:admin credentials work"             → "Default Credentials"
+  "Open redirect via next= parameter"                → "Open Redirect"
+  "Pickle deserialization RCE"                        → "Insecure Deserialization"
+  "Directory listing on /uploads/"                    → "Directory Listing"
+  "GraphQL introspection enabled"                     → "GraphQL Introspection"
+  "Race condition on coupon redemption"               → "Race Condition"
+  "JWT token is expired"                              → "Weak JWT Configuration"
+  "Cookie Missing Secure Flag: session_id"            → "Missing Secure Flag"
+  "JS Secret: API_KEY in bundle.js"                   → "Information Disclosure"
 
 ═══════════════════════════════════════════════════════
   RULE #6 — DOCUMENT EVERY FINDING WITH FULL POC
