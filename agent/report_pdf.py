@@ -655,8 +655,8 @@ _TITLE_REWRITES: dict[str, str] = {
     "JWT secret could be weak - recommend testing with common secrets":
                                                 "Weak JWT Signing Secret: Common Secret Suspected",
     # Internal endpoints / JS secrets
-    "JS: INTERNAL_ENDPOINT":                    "Information Disclosure: Internal Endpoint Exposed in JavaScript",
-    "JS Secret: INTERNAL_ENDPOINT":             "Sensitive Data Exposure: Internal Endpoint in Client-Side JavaScript",
+    "JS: INTERNAL_ENDPOINT":                    "Information Disclosure: Internal Endpoint in JavaScript",
+    "JS Secret: INTERNAL_ENDPOINT":             "Information Disclosure: Internal Endpoint in JavaScript",
     # Raw tool confirmations
     "XSS CONFIRMED - payload reflected unescaped!": "Reflected Cross-Site Scripting (XSS)",
     "XSS CONFIRMED":                            "Reflected Cross-Site Scripting (XSS)",
@@ -669,47 +669,79 @@ _TITLE_REWRITES: dict[str, str] = {
 }
 
 # Regex patterns → replacement template (use \1, \2, etc. for groups)
+# IMPORTANT: Titles should be CLEAN vulnerability class names only.
+# Technical details (params, fields, endpoints, methods) go in the description.
 _TITLE_PATTERNS: list[tuple[str, str]] = [
-    # "JS Secret: INTERNAL_ENDPOINT in <filename>"
-    (r"(?i)^JS\s*Secret:\s*INTERNAL_ENDPOINT\s+in\s+(.+)$",
-     r"Sensitive Data Exposure: Internal Endpoint in Client-Side JavaScript (\1)"),
-    # "Reflected XSS in <location>"
-    (r"(?i)^Reflected XSS\s+in\s+(.+)$",
-     r"Reflected Cross-Site Scripting (XSS) in \1"),
-    # "Stored XSS in <location>"
-    (r"(?i)^Stored XSS\s+in\s+(.+)$",
-     r"Stored Cross-Site Scripting (XSS) in \1"),
-    # "DOM XSS in <location>"
-    (r"(?i)^DOM XSS\s+in\s+(.+)$",
-     r"DOM-Based Cross-Site Scripting (XSS) in \1"),
-    # "Missing Security Header: <header>"
+    # "JS Secret: <type> in <filename>" → clean class name
+    (r"(?i)^JS\s*Secret:\s*INTERNAL_ENDPOINT\s+in\s+.+$",
+     r"Information Disclosure: Internal Endpoint in JavaScript"),
+    (r"(?i)^JS\s*Secret:\s*API_KEY\s+in\s+.+$",
+     r"Information Disclosure: API Key Exposed in JavaScript"),
+    (r"(?i)^JS\s*Secret:\s*(\w+)\s+in\s+.+$",
+     r"Information Disclosure: \1 Exposed in JavaScript"),
+    # "SQL Injection (error-based) — target via POST" → just "SQL Injection"
+    (r"(?i)^SQL Injection\s*\(?[^)]*\)?\s*[—–-]\s*.+$",
+     r"SQL Injection"),
+    (r"(?i)^SQL Injection\s*[—–-]\s*.+$",
+     r"SQL Injection"),
+    (r"(?i)^SQL Injection\s*\(.+\)$",
+     r"SQL Injection"),
+    # "Command Injection — tools target parameter" → just "Command Injection"
+    (r"(?i)^Command Injection\s*[—–-]\s*.+$",
+     r"Command Injection"),
+    (r"(?i)^Command Injection\s*:?\s*\w+\s+.+$",
+     r"Command Injection"),
+    # "XSS — Reflected in search_param" → "Reflected Cross-Site Scripting (XSS)"
+    (r"(?i)^XSS\s*[—–-]\s*Reflected\b.*$",
+     r"Reflected Cross-Site Scripting (XSS)"),
+    (r"(?i)^XSS\s*[—–-]\s*Stored\b.*$",
+     r"Stored Cross-Site Scripting (XSS)"),
+    (r"(?i)^XSS\s*[—–-]\s*DOM\b.*$",
+     r"DOM-Based Cross-Site Scripting (XSS)"),
+    (r"(?i)^XSS\s*[—–-]\s*.+$",
+     r"Cross-Site Scripting (XSS)"),
+    # "Reflected XSS in Forgot Password Form" → clean
+    (r"(?i)^Reflected XSS\b.*$",
+     r"Reflected Cross-Site Scripting (XSS)"),
+    (r"(?i)^Stored XSS\b.*$",
+     r"Stored Cross-Site Scripting (XSS)"),
+    (r"(?i)^DOM XSS\b.*$",
+     r"DOM-Based Cross-Site Scripting (XSS)"),
+    # "IDOR — Horizontal Access via /api/users/123" → just category
+    (r"(?i)^IDOR\s*[—–-]\s*(.+)$",
+     r"Insecure Direct Object Reference (IDOR)"),
+    # "SSRF — <details>" → clean
+    (r"(?i)^SSRF\s*[—–-]\s*.+$",
+     r"Server-Side Request Forgery (SSRF)"),
+    # "SSTI — <details>" → clean
+    (r"(?i)^SSTI\s*[—–-]\s*.+$",
+     r"Server-Side Template Injection (SSTI)"),
+    # "CSRF — <details>" → clean
+    (r"(?i)^CSRF\s*[—–-]\s*.+$",
+     r"Cross-Site Request Forgery (CSRF)"),
+    # Missing Security Header — keep the header name (it's the category)
     (r"(?i)^Missing Security Header:\s*(.+)$",
      r"Missing HTTP Security Header: \1"),
-    # "Server Version Disclosure: Server: <banner>"
+    # Server Version Disclosure — keep the banner
     (r"(?i)^Server Version Disclosure:\s*(?:Server:\s*)?(.+)$",
-     r"Server Version Disclosure: \1"),
-    # "Sensitive File Exposed: <path>"
+     r"Server Version Disclosure"),
+    # "Sensitive File Exposed: <path>" → clean
     (r"(?i)^Sensitive File Exposed:\s*(.+)$",
-     r"Sensitive File Exposure: \1 Publicly Accessible"),
-    # "Cookie Missing <flag>: <name>"
+     r"Sensitive File Exposure"),
+    # "Cookie Missing Secure Flag: refresh_token" → clean
     (r"(?i)^Cookie Missing\s+(Secure Flag|HttpOnly):\s*(.+)$",
-     r"Cookie \1 Not Set: \2"),
-    # "SQL Injection — <type> (<field>)"
-    (r"(?i)^SQL Injection\s*[—–-]\s*(.+)$",
-     r"SQL Injection: \1"),
-    # "Command Injection — <param> (<method>)"
-    (r"(?i)^Command Injection\s*[—–-]\s*(.+)$",
-     r"Command Injection: \1"),
-    # "IDOR — <type>"
-    (r"(?i)^IDOR\s*[—–-]\s*(.+)$",
-     r"Insecure Direct Object Reference (IDOR): \1"),
-    # "XSS — <type> in <param>"
-    (r"(?i)^XSS\s*[—–-]\s*(.+)$",
-     r"Cross-Site Scripting (XSS): \1"),
-    # Strip trailing " - recommend testing with ..."
+     r"Cookie \1 Not Set"),
+    # Strip trailing technical noise
     (r"(?i)\s*-\s*recommend\s+testing\s+with\s+.*$", ""),
-    # Strip trailing " CONFIRMED" noise
     (r"(?i)\s+CONFIRMED\b", ""),
+    # Strip "via POST", "via GET", "via <method>" from end
+    (r"(?i)\s+via\s+(GET|POST|PUT|DELETE|PATCH)\s*$", ""),
+    # Strip "(field=...)", "(param=...)" from end
+    (r"\s*\([^)]*(?:field|param|target|endpoint|url)=[^)]*\)\s*$", ""),
+    # Strip trailing " — <target> via <method>" patterns
+    (r"(?i)\s*[—–-]\s*\S+\s+via\s+\w+\s*$", ""),
+    # Strip trailing " — <anything with slashes>" (URL-like details)
+    (r"(?i)\s*[—–-]\s*\S*/\S+.*$", ""),
 ]
 
 
@@ -1954,15 +1986,21 @@ def _build_detailed_findings(findings, styles):
             if _shot_path:
                 try:
                     from reportlab.platypus import Image as RLImage
-                    elements.append(Paragraph("<b>POC Screenshot:</b>", poc_lbl_base))
-                    elements.append(Spacer(1, 1 * mm))
+                    elements.append(Spacer(1, 2 * mm))
                     _img = RLImage(str(_shot_path), width=155 * mm, height=100 * mm,
                                    kind="proportional")
-                    _img.hAlign = "LEFT"
+                    _img.hAlign = "CENTER"
                     elements.append(_img)
+                    elements.append(Spacer(1, 1 * mm))
+                    # Professional figure caption: "Figure N: Vulnerability Name"
+                    _fig_style = ParagraphStyle(
+                        "_fig_caption", parent=styles["SmallText"],
+                        fontSize=8, alignment=TA_CENTER,
+                        textColor=HexColor("#555555"), fontName="Helvetica-Oblique",
+                    )
                     elements.append(Paragraph(
-                        f"<font size=7 color='#888888'>{_xml_safe(screenshot_name)}</font>",
-                        styles["SmallText"],
+                        f"Figure {i}: {_xml_safe(title)}",
+                        _fig_style,
                     ))
                     elements.append(Spacer(1, 3 * mm))
                 except Exception:
@@ -2010,15 +2048,16 @@ def _build_detailed_findings(findings, styles):
             ))
         elements.append(Spacer(1, 5 * mm))
 
-        # ── 5.X.5  Risk Matrix ───────────────────────────────────────
-        elements.append(Paragraph(f"{sec}.5  Risk Matrix", styles["SubSection"]))
-        elements.extend(_build_zdl_risk_matrix(lkl, sc_idx, styles))
-
-        # ── 5.X.6  Risk Classification ───────────────────────────────
-        elements.append(Paragraph(f"{sec}.6  Risk Classification", styles["SubSection"]))
-        elements.extend(_build_zdl_risk_classification(
+        # ── 5.X.5  Risk Matrix + 5.X.6  Risk Classification ────────
+        # Wrap both in KeepTogether so they never split across pages
+        risk_block = []
+        risk_block.append(Paragraph(f"{sec}.5  Risk Matrix", styles["SubSection"]))
+        risk_block.extend(_build_zdl_risk_matrix(lkl, sc_idx, styles))
+        risk_block.append(Paragraph(f"{sec}.6  Risk Classification", styles["SubSection"]))
+        risk_block.extend(_build_zdl_risk_classification(
             title, sev, lkl, sc_idx, sc_val, risk_val, risk_label, cvss_str, styles,
         ))
+        elements.append(KeepTogether(risk_block))
 
         elements.append(PageBreak())
 
