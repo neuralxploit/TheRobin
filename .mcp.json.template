@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "robin-tools": {
+      "command": "__REPO_ROOT__/.venv/bin/python3",
+      "args": ["mcp_server.py"],
+      "cwd": "__REPO_ROOT__"
+    }
+  }
+}

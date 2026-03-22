@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "robin-tools": {
-      "command": "/Users/mic/Dev/AIPentest/TheRobin/.venv/bin/python3",
-      "args": ["mcp_server.py"],
-      "cwd": "/Users/mic/Dev/AIPentest/TheRobin"
-    }
-  }
-}
