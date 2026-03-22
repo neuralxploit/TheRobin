@@ -7,7 +7,7 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-VENV_DIR="venv"
+VENV_DIR=".venv"
 PYTHON="python3"
 
 echo ""
@@ -74,7 +74,7 @@ fi
 cat > run.sh << 'EOF'
 #!/usr/bin/env bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$DIR/venv/bin/activate"
+source "$DIR/.venv/bin/activate"
 python3 "$DIR/main.py" "$@"
 EOF
 chmod +x run.sh
