@@ -4,7 +4,8 @@
 # Then use: ./run.sh  OR  source venv/bin/activate && python3 main.py
 
 set -e
-cd "$(dirname "$0")"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
 VENV_DIR="venv"
 PYTHON="python3"
@@ -78,12 +79,44 @@ python3 "$DIR/main.py" "$@"
 EOF
 chmod +x run.sh
 
+# Generate .mcp.json for Claude Code
+echo ""
+echo "  Generating .mcp.json for Claude Code..."
+sed "s|__REPO_ROOT__|${REPO_ROOT}|g" "${REPO_ROOT}/.mcp.json.template" > "${REPO_ROOT}/.mcp.json"
+echo "  [OK] .mcp.json generated"
+
+# Patch ~/.config/opencode/opencode.json if OpenCode is installed
+OPENCODE_CFG="${HOME}/.config/opencode/opencode.json"
+if [ -f "$OPENCODE_CFG" ]; then
+    echo ""
+    echo "  Patching OpenCode MCP config..."
+    python3 - "$OPENCODE_CFG" "$REPO_ROOT" <<'PYEOF'
+import json, sys
+cfg_path, repo_root = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+cfg.setdefault("mcp", {})
+cfg["mcp"]["robin-tools"] = {
+    "command": [f"{repo_root}/.venv/bin/python3", f"{repo_root}/mcp_server.py"],
+    "enabled": True,
+    "timeout": 300000,
+    "type": "local"
+}
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+PYEOF
+    echo "  [OK] OpenCode MCP config updated"
+else
+    echo "  [SKIP] OpenCode not found (skipping MCP patch)"
+fi
+
 echo ""
 echo "  ┌──────────────────────────────────────────────────┐"
 echo "  │  Setup complete!                                  │"
 echo "  │                                                   │"
 echo "  │  Start console:  ./run.sh                         │"
 echo "  │  With target:    ./run.sh -t http://target.com    │"
-echo "  │  With model:     ./run.sh -m glm-5:cloud       │"
+echo "  │  With model:     ./run.sh -m glm-5:cloud          │"
 echo "  └──────────────────────────────────────────────────┘"
 echo ""
