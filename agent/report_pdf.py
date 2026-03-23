@@ -2670,6 +2670,8 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
         'dom xss': 'DOM XSS', 'dom sink': 'DOM XSS',
         'xss': 'XSS', 'cross-site scripting': 'XSS',
         'sqli': 'SQLi', 'sql injection': 'SQLi',
+        'nosqli': 'NoSQL Injection', 'nosql injection': 'NoSQL Injection',
+        'graphql injection': 'GraphQL Injection', 'graphql': 'GraphQL Injection',
         'csrf': 'CSRF', 'cross-site request forgery': 'CSRF',
         'ssrf': 'SSRF', 'server-side request forgery': 'SSRF',
         'ssti': 'SSTI', 'template injection': 'SSTI',
@@ -2678,10 +2680,10 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
         'step accessible': 'Workflow Bypass', 'accessible directly': 'Workflow Bypass',
         'checkout': 'Workflow Bypass',
         'business logic': 'Business Logic',
-        'command injection': 'Command Injection', 'cmdi': 'Command Injection',
+        'command injection': 'Command Injection', 'cmdi': 'Command Injection', 'rce': 'Command Injection',
         'xxe': 'XXE', 'xml external entity': 'XXE',
         'file upload': 'File Upload',
-        'path traversal': 'Path Traversal', 'directory traversal': 'Path Traversal',
+        'path traversal': 'Path Traversal', 'directory traversal': 'Path Traversal', 'lfi': 'Path Traversal',
         'open redirect': 'Open Redirect',
         'cors': 'CORS',
         'default credentials': 'Default Credentials',
@@ -2702,6 +2704,7 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
         'disallowed path': 'Robots Disallowed Path',
         'prometheus': 'Metrics Exposed', 'metrics accessible': 'Metrics Exposed',
         'hardcoded': 'Hardcoded Secrets',
+        'deserialization': 'Insecure Deserialization', 'pickle': 'Insecure Deserialization',
     }
 
     # Categories where ALL findings should collapse to ONE regardless of URL
@@ -2713,6 +2716,10 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
         'DOM XSS', 'Prototype Pollution', 'HTTP Smuggling', 'HTTP Method Override',
         'Metrics Exposed', 'Hardcoded Secrets', 'SSTI', 'Mass Assignment',
         'Excessive Data Exposure', 'Business Logic', 'Robots Disallowed Path',
+        # Injection vulnerabilities - consolidate all endpoints into ONE finding
+        'SQLi', 'Command Injection', 'SSRF', 'XSS', 'Reflected XSS', 'Stored XSS',
+        'Path Traversal', 'XXE', 'Insecure Deserialization', 'File Upload',
+        'GraphQL Injection', 'NoSQL Injection',
     }
 
     def _extract_category(title):
@@ -2744,8 +2751,8 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
         return t
 
     seen_exact = set()
-    # For COLLAPSE_ALL categories: (category) → (best_finding, sev_rank, count, urls)
-    collapse_map = {}
+    # For COLLAPSE_ALL categories: (category) → list of ALL findings to merge
+    collapse_map = {}  # category → {'findings': [...], 'urls': set(), 'best_idx': int}
     # For per-URL categories: (category, normalized_url) → (best_finding, sev_rank)
     category_url_map = {}
     # For uncategorized: (norm_title, norm_url) → (finding, sev_rank)
@@ -2769,18 +2776,15 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
 
         if category:
             if category in _COLLAPSE_ALL:
-                # ALL findings in this category → ONE entry
-                if category in collapse_map:
-                    existing_f, existing_rank, count, urls = collapse_map[category]
-                    urls.add(norm_url)
-                    if sev_rank < existing_rank:
-                        idx = deduped.index(existing_f)
-                        deduped[idx] = f
-                        collapse_map[category] = (f, sev_rank, count + 1, urls)
-                    else:
-                        collapse_map[category] = (existing_f, existing_rank, count + 1, urls)
-                    continue
-                collapse_map[category] = (f, sev_rank, 1, {norm_url})
+                # ALL findings in this category → collect for later merge
+                if category not in collapse_map:
+                    collapse_map[category] = {'findings': [], 'urls': set(), 'best_idx': 0, 'best_rank': 99}
+                collapse_map[category]['findings'].append(f)
+                collapse_map[category]['urls'].add(norm_url)
+                # Track best (highest severity = lowest rank)
+                if sev_rank < collapse_map[category]['best_rank']:
+                    collapse_map[category]['best_idx'] = len(collapse_map[category]['findings']) - 1
+                    collapse_map[category]['best_rank'] = sev_rank
             else:
                 # Group by (category, normalized_url)
                 cat_key = (category, norm_url)
@@ -2812,16 +2816,77 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
                 continue
             title_map[title_key] = (f, sev_rank)
 
-        deduped.append(f)
+        # Only add non-COLLAPSE_ALL findings to deduped
+        if not category or category not in _COLLAPSE_ALL:
+            deduped.append(f)
 
-    # Post-process: annotate collapsed findings with affected endpoint count
-    for category, (best_f, _, count, urls) in collapse_map.items():
-        if count > 1:
-            real_urls = {u for u in urls if u}
-            if real_urls:
-                best_f["title"] = f"{best_f['title']} (+{count - 1} more endpoints)"
-            else:
-                best_f["title"] = f"{best_f['title']} ({count} instances)"
+    # Post-process: merge all findings in COLLAPSE_ALL categories into ONE finding each
+    for category, data in collapse_map.items():
+        findings_list = data['findings']
+        urls = data['urls']
+        if not findings_list:
+            continue
+
+        # Get best finding (highest severity)
+        best_idx = data['best_idx']
+        best_f = findings_list[best_idx].copy()
+
+        if len(findings_list) == 1:
+            # Only one finding - just add it
+            deduped.append(best_f)
+            continue
+
+        # Multiple findings - merge them
+        # Collect all unique URLs, POCs, evidence, payloads
+        all_urls = set()
+        all_pocs = []
+        all_evidence = []
+        all_payloads = set()
+        all_methods = set()
+        all_params = set()
+
+        for f in findings_list:
+            if f.get('url'):
+                all_urls.add(f['url'])
+            if f.get('poc'):
+                # Extract param name from title if present
+                param_match = _re.search(r'in\s+(\w+)|param[=\s]+(\w+)|field[=\s]+(\w+)', f.get('title', ''), _re.IGNORECASE)
+                param_name = param_match.group(1) or param_match.group(2) or param_match.group(3) if param_match else ''
+                if param_name:
+                    all_pocs.append(f"## Endpoint: {f.get('url', '')} (param: {param_name})\n{f['poc']}")
+                else:
+                    all_pocs.append(f"## Endpoint: {f.get('url', '')}\n{f['poc']}")
+            if f.get('evidence'):
+                all_evidence.append(f"[{f.get('url', 'unknown')}]\n{f['evidence']}")
+            if f.get('payload'):
+                all_payloads.add(f['payload'])
+            if f.get('method'):
+                all_methods.add(f['method'])
+
+        # Build merged finding
+        real_urls = sorted([u for u in all_urls if u])
+        best_f['title'] = f"{best_f['title']} ({len(findings_list)} endpoints)"
+
+        # Create comprehensive POC with all endpoints
+        if all_pocs:
+            best_f['poc'] = "# Affected Endpoints\n" + "\n".join(f"- {u}" for u in real_urls) + "\n\n" + "\n\n".join(all_pocs)
+        elif real_urls:
+            best_f['affected_endpoints'] = [{"url": u} for u in real_urls]
+
+        if all_evidence:
+            best_f['evidence'] = "\n\n---\n\n".join(all_evidence)
+
+        if all_payloads:
+            best_f['payload'] = ", ".join(sorted(all_payloads)[:5])  # Max 5 payloads
+            if len(all_payloads) > 5:
+                best_f['payload'] += f" (+{len(all_payloads) - 5} more)"
+
+        if all_methods:
+            best_f['method'] = "/".join(sorted(all_methods))
+
+        best_f['url'] = real_urls[0] if real_urls else best_f.get('url', '')
+
+        deduped.append(best_f)
 
     all_findings = deduped
 
@@ -2920,8 +2985,19 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: s
 
     all_findings = unchained
 
-    # ── Final sort: CRITICAL → HIGH → MEDIUM → LOW → INFO ─────────────
-    all_findings.sort(key=lambda f: SEV_RANK.get(f.get("severity", "INFO").upper(), 4))
+    # ── Final sort: SEVERITY → CATEGORY (so related findings are grouped) ─
+    # Sort by severity first (CRITICAL → HIGH → MEDIUM → LOW → INFO)
+    # Then sort by category within each severity level (SQLi together, XSS together, etc.)
+    def _sort_key(f):
+        sev = SEV_RANK.get(f.get("severity", "INFO").upper(), 4)
+        # Extract category for secondary sort
+        title = f.get("title", "").lower()
+        category = _extract_category(title) or "zzz_other"  # "zzz_other" ensures categorizable items come first
+        # Secondary sort by alphabetical category name (deterministic order)
+        category_sort = category.lower()
+        return (sev, category_sort)
+
+    all_findings.sort(key=_sort_key)
 
     # ── Counts ────────────────────────────────────────────────────────
     counts = {}
