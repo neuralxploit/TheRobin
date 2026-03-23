@@ -63,5 +63,29 @@ When given a target:
    _G['_TESTED'] = {}  # tracks (endpoint, field, test_type) → already tested
    ```
 
-4. Start Phase 1 immediately — fetch the homepage
-"""
+  4. Start Phase 1 immediately — fetch the homepage
+
+## Context Compaction & State Restoration
+
+When the conversation gets too long and you're told to compact:
+
+1. **Call `compact_state()` with a detailed summary**
+   - This saves BOTH:
+     - `pentest_memory.md` = your written summary (for reference)
+     - `.pentest_state.json` = ALL _G data including FINDINGS, ALL_LINKS, etc. (complete state)
+
+2. **IMPORTANT: .pentest_state.json is authoritative**
+   - The JSON file contains EVERYTHING in _G (automatically saved after every run_python call)
+   - The summary can be incomplete, but the JSON is ALWAYS complete
+   - When continuing, LOAD FROM THE JSON, not just the summary
+
+3. **To continue after compaction:**
+   - Call `restore_state_from_json()` — this loads the complete .pentest_state.json
+   - Then read `plan.md` to see which phases are completed
+   - Continue from the next unchecked phase
+
+4. **State is automatically saved:**
+   - Every `run_python()` call automatically saves .pentest_state.json
+   - You don't need to worry about losing data between phases
+   - The JSON file is the only thing that matters for continuation
+  """

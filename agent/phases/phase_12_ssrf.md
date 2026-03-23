@@ -171,8 +171,26 @@
   if ssrf_findings:
       _G.setdefault('FINDINGS', [])
       for sf in ssrf_findings:
-          _G['FINDINGS'].append({'severity': 'CRITICAL', 'title': f"SSRF — {sf['label']}", 'url': sf['url'], 'detail': sf})
+          _G['FINDINGS'].append({
+              'severity': 'CRITICAL',
+              'title': 'SSRF',
+              'url': sf['url'],
+              'method': sf['method'],
+              'param': sf['param'],
+              'payload': sf['payload'],
+              'evidence': sf['evidence'],
+              'impact': f"Server-side request forgery ({sf['label']}) — attacker can make the server issue arbitrary requests to internal/external resources, potentially reading cloud metadata, internal services, or local files.",
+              'remediation': 'Validate and whitelist allowed URL schemes and destinations. Block requests to internal/cloud metadata IPs (169.254.x.x, 127.0.0.1, etc.). Use an allowlist of permitted domains. Disable unused URL schemes (file://, gopher://, etc.).',
+              'screenshot': '',
+          })
       print(f"\n[CRITICAL] SSRF found on {len(ssrf_findings)} endpoint(s)!")
   else:
       print("[INFO] No SSRF detected")
   ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed SSRF finding, take a browser screenshot:
+   browser_action(action="navigate", url="<vulnerable_url>")
+   browser_action(action="screenshot", filename="ssrf_proof_<param>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the request was blocked → REMOVE the finding (false positive)

@@ -195,7 +195,7 @@
                   cmdi_findings.append({
                       'url': test_url, 'param': param,
                       'payload': payload, 'method': method.upper(),
-                      'evidence': body[:500],
+                      'evidence': body[:500], 'screenshot': '',
                   })
                   break  # confirmed — move to next param
           if cmdi_findings and cmdi_findings[-1].get('url') == test_url:
@@ -219,7 +219,7 @@
               print(f'[CRITICAL] CMDi CONFIRMED via URL param: {purl}?{pname}=')
               print(f'  Payload: {payload}')
               cmdi_findings.append({'url': purl, 'param': pname, 'payload': payload,
-                                    'method': 'GET', 'evidence': body[:500]})
+                                    'method': 'GET', 'evidence': body[:500], 'screenshot': ''})
               break
 
   if cmdi_findings:
@@ -228,12 +228,25 @@
       for cf in cmdi_findings:
           _G['FINDINGS'].append({
               'severity': 'CRITICAL',
-              'title': f"Command Injection — {cf['param']} param",
+              'title': 'Command Injection',
               'url': cf['url'],
-              'detail': cf,
+              'method': cf['method'],
+              'param': cf['param'],
+              'payload': cf['payload'],
+              'evidence': cf['evidence'],
+              'impact': 'Full server compromise — attacker can execute arbitrary OS commands.',
+              'remediation': 'Never pass user input to OS commands. Use language-native APIs instead of shell calls. If unavoidable, use strict allowlists and parameterized command execution.',
+              'screenshot': cf.get('screenshot', ''),
           })
       print(f'\n[CRITICAL] Command Injection found on {len(cmdi_findings)} endpoint(s)!')
   else:
       print('[INFO] No command injection found')
       print('  Tested: ' + ', '.join(f[0] for f in cmdi_forms)[:300])
   ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed CMDi finding, take a browser screenshot:
+   browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+   browser_action(action="screenshot", filename="cmdi_proof_<param>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows a WAF block or error page → REMOVE the finding (false positive)

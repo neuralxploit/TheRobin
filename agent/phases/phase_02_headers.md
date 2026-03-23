@@ -35,7 +35,6 @@
     for each header: print present (✓ [INFO]) or missing (✗ [SEVERITY])
 
 ---
-
 **MANDATORY — Store header findings before moving on:**
 
 After printing the header table above, store each missing header as a finding:
@@ -58,8 +57,10 @@ for _hdr, _sev in _header_severity.items():
             'severity': _sev,
             'title': f'Missing Security Header: {_hdr}',
             'url': BASE,
+            'method': 'GET',
             'evidence': f'Header {_hdr} was not present in the server response',
             'impact': f'Missing {_hdr} header may allow attacks like clickjacking, MIME sniffing, or content injection',
+            'screenshot': '',
         })
 
 # Server/version disclosure
@@ -69,8 +70,10 @@ for _hdr in ('Server', 'X-Powered-By'):
             'severity': 'LOW',
             'title': f'Server Version Disclosure: {_hdr}: {_resp_headers[_hdr]}',
             'url': BASE,
+            'method': 'GET',
             'evidence': f'{_hdr}: {_resp_headers[_hdr]}',
             'impact': 'Technology fingerprinting aids targeted attacks',
+            'screenshot': '',
         })
 
 # Cookie flags
@@ -79,16 +82,36 @@ _r = _req.get(BASE, verify=False, allow_redirects=True)
 for _ck in _r.cookies:
     if not _ck.secure:
         _G['FINDINGS'].append({
-            'severity': 'HIGH', 'title': f'Cookie Missing Secure Flag: {_ck.name}',
-            'url': BASE, 'evidence': f'Cookie {_ck.name} does not have the Secure flag set',
+            'severity': 'HIGH',
+            'title': f'Cookie Missing Secure Flag: {_ck.name}',
+            'url': BASE,
+            'method': 'GET',
+            'evidence': f'Cookie {_ck.name} does not have the Secure flag set',
             'impact': 'Cookie transmitted over unencrypted connections',
+            'screenshot': '',
         })
     if not _ck.has_nonstandard_attr('HttpOnly') and 'httponly' not in str(_ck).lower():
         _G['FINDINGS'].append({
-            'severity': 'MEDIUM', 'title': f'Cookie Missing HttpOnly Flag: {_ck.name}',
-            'url': BASE, 'evidence': f'Cookie {_ck.name} does not have the HttpOnly flag set',
+            'severity': 'MEDIUM',
+            'title': f'Cookie Missing HttpOnly Flag: {_ck.name}',
+            'url': BASE,
+            'method': 'GET',
+            'evidence': f'Cookie {_ck.name} does not have the HttpOnly flag set',
             'impact': 'Cookie accessible to JavaScript — XSS can steal session',
+            'screenshot': '',
         })
 
 print(f"[+] Stored {len(_G['FINDINGS'])} header/cookie findings")
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify header findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all header/cookie findings:")
+for finding in _G['FINDINGS']:
+    if any(kw in finding.get('title', '') for kw in ['Missing Security Header', 'Cookie Missing', 'Server Version']):
+        if not finding.get('screenshot'):
+            print(f"  [OPTIONAL] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_02_header_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  Header findings are verified via response headers (devtools Network tab). Screenshots are optional but recommended for evidence.")
 ```

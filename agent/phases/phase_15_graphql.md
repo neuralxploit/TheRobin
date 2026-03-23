@@ -315,13 +315,15 @@ if GRAPHQL_URL:
         if 'data' in _d and _d['data'] and '__schema' in _d['data']:
             _G['FINDINGS'].append({
                 'severity': 'HIGH',
-                'title': 'GraphQL Introspection Enabled — Full Schema Exposed',
+                'title': 'GraphQL Introspection Enabled',
                 'url': GRAPHQL_URL,
                 'method': 'POST',
                 'parameter': 'query',
                 'payload': '{__schema{queryType{name}types{name fields{name}}}}',
                 'evidence': f"Server returned full schema with {len([t for t in _d['data']['__schema'].get('types',[]) if not t['name'].startswith('__')])} custom types",
                 'impact': 'Attacker can map entire API surface, discover hidden queries/mutations, and plan targeted attacks',
+                'remediation': 'Disable introspection in production by setting introspection: false in the GraphQL server config. Only allow introspection in development environments.',
+                'screenshot': '',
             })
             _gql_count += 1
     except Exception:
@@ -331,13 +333,15 @@ if GRAPHQL_URL:
     if suggestions_found:
         _G['FINDINGS'].append({
             'severity': 'MEDIUM',
-            'title': f"GraphQL Field Suggestions Leak — {len(suggestions_found)} field names disclosed",
+            'title': 'GraphQL Field Suggestion Leak',
             'url': GRAPHQL_URL,
             'method': 'POST',
             'parameter': 'query',
             'payload': '{ user { emai } }',
             'evidence': f"Server returned field name suggestions: {suggestions_found[:10]}",
             'impact': 'Bypasses introspection-disabled controls; attacker can enumerate schema fields one at a time',
+            'remediation': 'Disable field suggestion hints in the GraphQL server configuration to prevent schema enumeration when introspection is disabled.',
+            'screenshot': '',
         })
         _gql_count += 1
 
@@ -349,13 +353,15 @@ if GRAPHQL_URL:
             if 'data' in _d and _d['data'] and any(v for v in _d['data'].values() if v):
                 _G['FINDINGS'].append({
                     'severity': 'CRITICAL',
-                    'title': f"GraphQL Unauthenticated Access — {label}",
+                    'title': 'GraphQL Unauthenticated Access',
                     'url': GRAPHQL_URL,
                     'method': 'POST',
                     'parameter': 'query',
                     'payload': query,
                     'evidence': f"Data returned without auth: {str(_d['data'])[:200]}",
                     'impact': 'Sensitive data accessible without authentication; complete auth bypass on GraphQL API',
+                    'remediation': 'Enforce authentication on all GraphQL resolvers. Use middleware or directives to require valid credentials before executing any query or mutation.',
+                    'screenshot': '',
                 })
                 _gql_count += 1
         except Exception:
@@ -369,13 +375,15 @@ if GRAPHQL_URL:
             if 'data' in _d and _d['data'] and any(v for v in _d['data'].values() if v):
                 _G['FINDINGS'].append({
                     'severity': 'CRITICAL',
-                    'title': f"GraphQL Unauthenticated Mutation — {label}",
+                    'title': 'GraphQL Unauth Mutation',
                     'url': GRAPHQL_URL,
                     'method': 'POST',
                     'parameter': 'query',
                     'payload': mutation[:200],
                     'evidence': f"Mutation succeeded without auth: {str(_d['data'])[:200]}",
                     'impact': 'Attacker can create/modify/delete data without authentication',
+                    'remediation': 'Require authentication and authorization checks on all mutation resolvers. Never allow anonymous write operations.',
+                    'screenshot': '',
                 })
                 _gql_count += 1
         except Exception:
@@ -391,23 +399,29 @@ if GRAPHQL_URL:
                 if _successful:
                     _G['FINDINGS'].append({
                         'severity': 'CRITICAL',
-                        'title': f"GraphQL Alias Batching — {len(_successful)}/10 logins returned tokens",
+                        'title': 'GraphQL Alias Batching',
                         'url': GRAPHQL_URL,
                         'method': 'POST',
+                        'parameter': 'query',
                         'payload': batch_query[:200],
                         'evidence': f"{len(_successful)} login aliases returned tokens in single request",
                         'impact': 'Complete rate limit bypass; brute-force attacks via batched GraphQL aliases',
+                        'remediation': 'Limit the number of aliases and operations allowed per request. Implement query complexity analysis and rate limiting at the GraphQL layer.',
+                        'screenshot': '',
                     })
                     _gql_count += 1
                 elif 'errors' not in _d or not any('batch' in str(e).lower() or 'alias' in str(e).lower() for e in _d.get('errors',[])):
                     _G['FINDINGS'].append({
                         'severity': 'HIGH',
-                        'title': 'GraphQL Alias Batching — Rate Limit Bypass',
+                        'title': 'GraphQL Rate Limit Bypass',
                         'url': GRAPHQL_URL,
                         'method': 'POST',
+                        'parameter': 'query',
                         'payload': batch_query[:200],
                         'evidence': 'Server accepted 10 login attempts in single request without HTTP 429',
                         'impact': 'Brute-force rate limiting can be bypassed via GraphQL alias batching',
+                        'remediation': 'Limit the number of aliases and operations allowed per request. Implement query complexity analysis and rate limiting at the GraphQL layer.',
+                        'screenshot': '',
                     })
                     _gql_count += 1
     except Exception:
@@ -420,3 +434,10 @@ print("        IDOR, mutations, alias batching, injection")
 print(f"Stored {_gql_count} GraphQL findings in _G['FINDINGS']")
 print("=" * 60)
 ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed GraphQL finding, take a browser screenshot:
+   browser_action(action="navigate", url="<graphql_endpoint>")
+   browser_action(action="screenshot", filename="graphql_proof_<type>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the query was blocked → REMOVE the finding (false positive)

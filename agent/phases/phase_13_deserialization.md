@@ -171,8 +171,28 @@
   if deser_findings:
       _G.setdefault('FINDINGS', [])
       for df in deser_findings:
-          _G['FINDINGS'].append({'severity': 'CRITICAL', 'title': f"Insecure Deserialization ({df['type']})", 'url': df['url'], 'detail': df})
+          _G['FINDINGS'].append({
+          'severity': 'CRITICAL',
+          'title': 'Insecure Deserialization',
+          'url': df.get('url', ''),
+          'method': 'POST',
+          'param': df.get('param', ''),
+          'payload': df.get('payload', ''),
+          'evidence': df.get('evidence', ''),
+          'impact': 'Remote code execution via insecure deserialization of user-controlled data',
+          'remediation': 'Never deserialize untrusted data. Use safe serialization formats (JSON) and validate all input before processing.',
+          'screenshot': ''
+      })
       print(f"\n[CRITICAL] Deserialization RCE on {len(deser_findings)} endpoint(s)!")
   else:
       print("[INFO] No insecure deserialization detected")
   ```
+
+```
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed deserialization finding, take a browser screenshot:
+   browser_action(action="navigate", url="<vulnerable_url>")
+   browser_action(action="screenshot", filename="deser_proof_<type>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the payload was rejected → REMOVE the finding (false positive)
+```

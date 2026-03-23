@@ -262,10 +262,12 @@ _G.setdefault('FINDINGS', [])
 for _jf in _js_findings:
     _G['FINDINGS'].append({
         'severity': _jf.get('sev', 'HIGH'),
-        'title': f"JS Analysis: {_jf.get('type','')} in {_jf.get('file','').split('/')[-1]}",
+        'title': _jf.get('type', 'JS Secret Exposure'),
         'url': _jf.get('file', ''),
         'evidence': _jf.get('match', _jf.get('evidence', '')),
         'impact': 'Exposed secrets, credentials, or vulnerable code patterns in JavaScript',
+        'remediation': 'Remove secrets and sensitive data from client-side JavaScript. Use environment variables server-side and restrict JS to non-sensitive logic.',
+        'screenshot': '',
     })
 print(f'\n[JS] External JS analysis complete — {len(_js_findings)} issue(s) across {len(_js_urls)} files')
 
@@ -396,3 +398,10 @@ for _ep in list(_G.get('API_ENDPOINTS', [])) + [BASE + '/api']:
 if not _pp_found:
     print('[INFO] No prototype pollution detected via active testing')
 ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed fingerprint/CVE finding, take a browser screenshot:
+   browser_action(action="navigate", url="<url_showing_version>")
+   browser_action(action="screenshot", filename="fingerprint_proof_<tech>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows a generic page with no version info → REMOVE the finding (false positive)

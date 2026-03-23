@@ -172,5 +172,22 @@
   for f in _err_findings:
       print(f"  [{f['severity']}] {f['title']}")
   if _err_findings:
+      # Add screenshot field to each finding
+      for f in _err_findings:
+          f['screenshot'] = ''
+          f['method'] = 'GET'
+          f['impact'] = 'Information disclosure aids targeting, reveals system details'
       _G.setdefault('FINDINGS', []).extend(_err_findings)
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify error handling findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all error handling findings:")
+for finding in _G['FINDINGS']:
+    if 'Information disclosure' in finding.get('title', '') or 'error' in finding.get('title', '').lower() or 'stack' in finding.get('title', '').lower():
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_25_error_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot doesn't show actual stack trace/system details, it's FALSE POSITIVE — remove it")
   ```

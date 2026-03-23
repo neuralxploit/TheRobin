@@ -297,17 +297,34 @@
                   except Exception:
                       pass
 
-      # Summary
-      print(f"\n=== JWT SUMMARY: {len(jwt_findings)} issues found ===")
-      for f in jwt_findings:
-          sev = 'CRITICAL' if f['type'] in ('jwt-alg-none','jwt-weak-secret','jwt-sensitive-data',
-                                              'jwt-hash-leak','jwt-idor') else 'HIGH'
-          print(f"  [{sev}] {f['type']}: {f['detail'][:80]}")
-      if jwt_findings:
-          _G.setdefault('FINDINGS', []).extend([
-              {'severity': 'CRITICAL' if f['type'] in ('jwt-alg-none','jwt-weak-secret',
-                  'jwt-sensitive-data','jwt-hash-leak','jwt-idor') else 'HIGH',
-               'title': f"JWT — {f['type']}",
-               'url': BASE, 'detail': f} for f in jwt_findings
-          ])
+        # Summary
+        print(f"\n=== JWT SUMMARY: {len(jwt_findings)} issues found ===")
+        for f in jwt_findings:
+            sev = 'CRITICAL' if f['type'] in ('jwt-alg-none','jwt-weak-secret','jwt-sensitive-data',
+                                                'jwt-hash-leak','jwt-idor') else 'HIGH'
+            print(f"  [{sev}] {f['type']}: {f['detail'][:80]}")
+        if jwt_findings:
+            _G.setdefault('FINDINGS', []).extend([
+                {'severity': 'CRITICAL' if f['type'] in ('jwt-alg-none','jwt-weak-secret',
+                    'jwt-sensitive-data','jwt-hash-leak','jwt-idor') else 'HIGH',
+                 'title': f"JWT — {f['type']}",
+                 'url': BASE,
+                 'method': 'GET',
+                 'evidence': f['detail'],
+                 'impact': 'Token forgery, privilege escalation, sensitive data exposure',
+                 'screenshot': '',
+                 'detail': f} for f in jwt_findings
+            ])
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify JWT findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all JWT findings:")
+for finding in _G['FINDINGS']:
+    if 'JWT' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_09b_jwt_{finding.get('title').replace('JWT — ','').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  JWT findings may require showing the decoded token structure or forged token in action. Verify via browser DevTools Application tab for JWT content.")
   ```

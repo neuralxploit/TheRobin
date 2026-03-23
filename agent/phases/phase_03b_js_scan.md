@@ -270,16 +270,30 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      # Store findings globally for report generation
      _G['JS_FINDINGS'] = js_findings
 
-     # Also store in main FINDINGS for PDF/ZDL report
-     _G.setdefault('FINDINGS', [])
-     for _jf in js_findings:
-         _G['FINDINGS'].append({
-             'severity': _jf.get('severity', 'HIGH'),
-             'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
-             'url': _jf.get('url', ''),
-             'evidence': _jf.get('match', _jf.get('evidence', '')),
-             'impact': 'Exposed credentials or API keys in client-side JavaScript',
-         })
+      # Also store in main FINDINGS for PDF/ZDL report
+      _G.setdefault('FINDINGS', [])
+      for _jf in js_findings:
+          _G['FINDINGS'].append({
+              'severity': _jf.get('severity', 'HIGH'),
+              'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
+              'url': _jf.get('url', ''),
+              'method': 'GET',
+              'evidence': _jf.get('match', _jf.get('evidence', '')),
+              'impact': 'Exposed credentials or API keys in client-side JavaScript',
+              'screenshot': '',
+          })
+
+      # POST-PHASE SCREENSHOT CHECKPOINT — verify JS secret findings with screenshots
+      print("\n[SCREENSHOT CHECKPOINT] Verify all JavaScript secret findings:")
+      for finding in _G['FINDINGS']:
+          if 'JS Secret' in finding.get('title', '') or 'Secret' in finding.get('title', ''):
+              if not finding.get('screenshot'):
+                  print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+                  print(f"    Navigate to: {finding.get('url')}")
+                  print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+                  print(f"    browser_action(action='screenshot', filename='phase_03b_js_secret_{finding.get('title').replace('JS Secret: ','').lower()[:40]}.png')")
+                  print(f"    Update finding['screenshot'] with the filename")
+      print("\n  For JS secret findings, verify by viewing the JavaScript file content in browser DevTools Sources tab. Screenshot should show the secret in context.")
 
      # REPORT SUMMARY TO CONVERSATION (MANDATORY)
      js_critical = [f for f in js_findings if f['severity'] == 'CRITICAL']

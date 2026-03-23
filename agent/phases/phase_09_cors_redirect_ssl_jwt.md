@@ -206,31 +206,44 @@ _G.setdefault('FINDINGS', [])
 if '_cors_vuln' in dir() and _cors_vuln:
     _G['FINDINGS'].append({
         'severity': _cors_sev,
-        'title': f'CORS Misconfiguration: {_cors_detail}',
+        'title': 'Permissive CORS',
         'url': BASE,
         'evidence': _cors_evidence,
         'impact': 'Cross-origin data theft, session hijacking via malicious website',
+        'remediation': 'Configure Access-Control-Allow-Origin to only allow trusted origins. Never reflect arbitrary Origin headers or use wildcard (*) with credentials.',
+        'screenshot': '',
     })
 
 # Store Open Redirect findings
 for _redir_f in _G.get('_open_redirects', []):
     _G['FINDINGS'].append({
         'severity': 'HIGH',
-        'title': f"Open Redirect via ?{_redir_f.get('param','redirect')}=",
+        'title': 'Open Redirect',
         'url': _redir_f.get('url', BASE),
         'evidence': _redir_f.get('evidence', ''),
         'impact': 'Phishing attacks using trusted domain, credential theft',
+        'remediation': 'Validate redirect destinations against an allowlist of trusted URLs. Reject or ignore user-supplied redirect parameters pointing to external domains.',
+        'screenshot': '',
     })
 
 # Store rate limiting finding
 if '_no_rate_limit' in dir() and _no_rate_limit:
     _G['FINDINGS'].append({
         'severity': 'MEDIUM',
-        'title': 'No Rate Limiting on Login Endpoint',
+        'title': 'Missing Rate Limiting',
         'url': _G.get('login_url', BASE + '/login'),
         'evidence': 'Sent 15+ rapid login requests without being blocked',
         'impact': 'Brute-force attacks against user credentials',
+        'remediation': 'Implement rate limiting on authentication endpoints (e.g., 5 attempts per minute). Use account lockout, CAPTCHA, or exponential backoff after repeated failures.',
+        'screenshot': '',
     })
 
 print(f"[+] Phase 9 stored {len([f for f in _G['FINDINGS'] if 'CORS' in f.get('title','') or 'Redirect' in f.get('title','') or 'Rate' in f.get('title','')])} findings")
 ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For confirmed redirect findings, take a browser screenshot:
+   browser_action(action="navigate", url="<redirect_url>")
+   browser_action(action="screenshot", filename="redirect_proof.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the redirect was blocked → REMOVE the finding (false positive)

@@ -194,8 +194,25 @@
   if upload_findings:
       _G.setdefault('FINDINGS', [])
       for uf in upload_findings:
-          _G['FINDINGS'].append({'severity': uf['severity'], 'title': f"File Upload — {uf['label']}", 'url': uf['url'], 'detail': uf})
+          _G['FINDINGS'].append({
+              'severity': uf['severity'],
+              'title': 'File Upload',
+              'url': uf['url'],
+              'method': 'POST',
+              'payload': uf['filename'],
+              'evidence': uf['evidence'],
+              'impact': f"Attacker can upload and execute malicious files ({uf['label']}), leading to remote code execution or stored XSS.",
+              'remediation': 'Validate file type by content (magic bytes), enforce an allowlist of extensions, store uploads outside the webroot, and strip executable permissions.',
+              'screenshot': ''
+          })
       print(f"\n[CRITICAL] File upload vulnerabilities on {len(upload_findings)} form(s)!")
   else:
       print("[INFO] No exploitable file upload found")
   ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed upload finding, take a browser screenshot:
+   browser_action(action="navigate", url="<uploaded_file_url>")
+   browser_action(action="screenshot", filename="upload_proof_<type>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the file was rejected or not executable → REMOVE the finding (false positive)

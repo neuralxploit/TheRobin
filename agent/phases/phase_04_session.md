@@ -136,7 +136,6 @@
   ```
 
 ---
-
 **MANDATORY — Store session findings before moving on:**
 
 ```python
@@ -149,8 +148,10 @@ if '_cookie_xss_found' in dir() and _cookie_xss_found:
         'severity': 'HIGH',
         'title': 'XSS via Cookie Injection',
         'url': BASE,
+        'method': 'GET',
         'evidence': 'XSS payload in cookie value was reflected and executed',
         'impact': 'Cross-site scripting via cookie manipulation',
+        'screenshot': '',
     })
 
 if '_cookie_sqli_found' in dir() and _cookie_sqli_found:
@@ -158,8 +159,10 @@ if '_cookie_sqli_found' in dir() and _cookie_sqli_found:
         'severity': 'CRITICAL',
         'title': 'SQL Injection via Cookie',
         'url': BASE,
+        'method': 'GET',
         'evidence': 'SQL injection payload in cookie value triggered database error',
         'impact': 'Database extraction via cookie-based SQL injection',
+        'screenshot': '',
     })
 
 # Missing SameSite attribute
@@ -168,9 +171,23 @@ if '_missing_samesite' in dir() and _missing_samesite:
         'severity': 'MEDIUM',
         'title': 'Cookie Missing SameSite Attribute',
         'url': BASE,
+        'method': 'GET',
         'evidence': 'Session cookie does not set SameSite attribute',
         'impact': 'Cross-site request forgery attacks possible',
+        'screenshot': '',
     })
 
 print(f"[+] Session phase stored findings")
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify session findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all session findings:")
+for finding in _G['FINDINGS']:
+    if 'Cookie' in finding.get('title', '') or 'SameSite' in finding.get('title', '') or 'Session' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_04_session_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  For cookie-based findings, verify via developer tools (Application tab) or check response headers. Screenshot may show page with reflected payload.")
 ```

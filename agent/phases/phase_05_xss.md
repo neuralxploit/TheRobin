@@ -135,6 +135,7 @@
                       'type': 'reflected', 'url': url, 'param': fname,
                       'payload': payload, 'method': method.upper(),
                       'evidence': r.text[max(0,pi-80):pi+200],
+                      'screenshot': '',
                   })
                   confirmed = True
                   break
@@ -185,6 +186,8 @@
               xss_findings.append({
                   'type': 'reflected', 'url': purl, 'param': pname,
                   'payload': payload, 'method': 'GET',
+                  'evidence': r.text[max(0,r.text.find(payload[:15])-80):r.text.find(payload[:15])+200] if payload[:15] in r.text else '',
+                  'screenshot': '',
               })
               break
 
@@ -244,6 +247,7 @@
                       xss_findings.append({
                           'type': 'stored', 'url': action, 'param': fname,
                           'payload': STORED_PAYLOAD, 'display_page': check_page,
+                          'screenshot': '',
                       })
                       found = True
                       break
@@ -252,6 +256,7 @@
                       xss_findings.append({
                           'type': 'stored', 'url': action, 'param': fname,
                           'payload': STORED_PAYLOAD, 'display_page': check_page,
+                          'screenshot': '',
                       })
                       found = True
                       break
@@ -292,6 +297,7 @@
                           xss_findings.append({
                               'type': 'stored-api', 'url': _api_url, 'param': _field,
                               'payload': _API_XSS_PAYLOAD, 'method': 'POST (JSON)',
+                              'screenshot': '',
                           })
                           break
                       # Also GET the same endpoint to see if stored
@@ -301,6 +307,7 @@
                           xss_findings.append({
                               'type': 'stored-api', 'url': _api_url, 'param': _field,
                               'payload': _API_XSS_PAYLOAD, 'method': 'POST (JSON)',
+                              'screenshot': '',
                           })
                           break
               except Exception:
@@ -317,9 +324,14 @@
   # Also store in main FINDINGS for PDF report
   _G.setdefault('FINDINGS', [])
   for _xf in xss_findings:
+      _xtype = _xf.get('type', 'xss')
+      if 'stored' in _xtype:
+          _xtitle = 'Stored XSS'
+      else:
+          _xtitle = 'Reflected XSS'
       _G['FINDINGS'].append({
           'severity': _xf.get('severity', 'HIGH'),
-          'title': f"XSS ({_xf.get('type','XSS')}) — {_xf.get('param','')} via {_xf.get('method','?')}",
+          'title': _xtitle,
           'url': _xf.get('url', ''),
           'method': _xf.get('method', 'GET'),
           'parameter': _xf.get('param', ''),
@@ -327,6 +339,15 @@
           'evidence': _xf.get('evidence', ''),
           'request': _xf.get('request', ''),
           'response': _xf.get('response', ''),
+          'screenshot': _xf.get('screenshot', ''),
           'impact': 'Session hijacking, credential theft, defacement via cross-site scripting',
+          'remediation': 'Apply context-aware output encoding on all user-controlled data. Use Content-Security-Policy headers to restrict inline script execution. Validate and sanitize input server-side.',
       })
   ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed XSS finding, take a browser screenshot:
+   browser_action(action="navigate", url="<vulnerable_url_with_xss_payload>")
+   browser_action(action="screenshot", filename="xss_proof_<param>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the payload HTML-encoded or not rendered → REMOVE the finding (false positive)

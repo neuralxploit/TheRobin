@@ -90,10 +90,12 @@
       for _xf in dom_xss_findings:
           _G['FINDINGS'].append({
               'severity': 'HIGH',
-              'title': f"DOM XSS: {_xf.get('desc', _xf.get('type', 'DOM XSS'))} — {_xf.get('param', _xf.get('file', '').split('/')[-1])}",
+              'title': 'DOM XSS Sink',
               'url': _xf.get('url', _xf.get('file', '')),
               'evidence': _xf.get('evidence', _xf.get('match', '')),
               'impact': 'Client-side code execution via DOM-based cross-site scripting',
+              'remediation': 'Avoid dangerous DOM sinks (innerHTML, document.write, eval). Use textContent or safe DOM APIs instead. Sanitize all user-controlled input before passing to sinks.',
+              'screenshot': '',
           })
   else:
       print("[INFO] No DOM XSS source→sink chains found in JS")
@@ -234,10 +236,12 @@
           for _xf in template_findings:
               _G['FINDINGS'].append({
                   'severity': 'HIGH',
-                  'title': f"DOM XSS: {_xf.get('desc', _xf.get('type', 'DOM XSS'))} — {_xf.get('param', _xf.get('file', '').split('/')[-1])}",
+                  'title': 'Framework Template XSS',
                   'url': _xf.get('url', _xf.get('file', '')),
                   'evidence': _xf.get('evidence', _xf.get('match', '')),
                   'impact': 'Client-side code execution via DOM-based cross-site scripting',
+                  'remediation': 'Avoid injecting user input into framework templates. Use framework-provided sanitization (e.g., Angular DomSanitizer, Vue v-text). Upgrade to latest framework version with sandbox protections.',
+                  'screenshot': '',
               })
           print(f"\n[HIGH] {len(template_findings)} framework template injection(s) found")
       else:
@@ -314,12 +318,21 @@
       for _xf in encoding_findings:
           _G['FINDINGS'].append({
               'severity': 'HIGH',
-              'title': f"DOM XSS: {_xf.get('desc', _xf.get('type', 'DOM XSS'))} — {_xf.get('param', _xf.get('file', '').split('/')[-1])}",
+              'title': 'Encoding Bypass XSS',
               'url': _xf.get('url', _xf.get('file', '')),
               'evidence': _xf.get('evidence', _xf.get('match', '')),
               'impact': 'Client-side code execution via DOM-based cross-site scripting',
+              'remediation': 'Implement context-aware output encoding. Do not rely solely on blocklist-based filters or single-pass encoding. Use a proven library (e.g., DOMPurify) and apply encoding at the output stage.',
+              'screenshot': '',
           })
       print(f"\n[HIGH] {len(encoding_findings)} encoding bypass XSS found")
   else:
       print("[INFO] No encoding bypass XSS found")
   ```
+
+  AFTER RUNNING THIS BLOCK — MANDATORY:
+  1. For each confirmed DOM XSS finding, take a browser screenshot:
+     browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+     browser_action(action="screenshot", filename="dom_xss_proof_<sink>.png")
+  2. Update each finding's 'screenshot' field in _G['FINDINGS']
+  3. If the screenshot shows the payload not executing → REMOVE the finding (false positive)

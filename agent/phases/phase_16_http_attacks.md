@@ -263,8 +263,12 @@ if '_host_injection' in dir() and _host_injection:
         'severity': 'HIGH',
         'title': 'Host Header Injection',
         'url': BASE,
+        'method': 'GET',
+        'parameter': 'Host',
+        'payload': 'evil.com',
         'evidence': 'Injected Host header value was reflected in the server response',
         'impact': 'Cache poisoning, password reset hijacking, server-side request routing manipulation',
+        'screenshot': '',
     })
 
 # CRLF injection
@@ -273,8 +277,10 @@ if '_crlf_found' in dir() and _crlf_found:
         'severity': 'HIGH',
         'title': 'CRLF / HTTP Header Injection',
         'url': BASE,
+        'method': 'POST',
         'evidence': 'Injected CRLF sequence resulted in arbitrary header in response',
         'impact': 'HTTP response splitting, session fixation, XSS via injected headers',
+        'screenshot': '',
     })
 
 # IP spoofing bypass
@@ -283,8 +289,10 @@ if '_ip_spoof_found' in dir() and _ip_spoof_found:
         'severity': 'HIGH',
         'title': 'IP Spoofing Access Control Bypass',
         'url': BASE,
+        'method': 'GET',
         'evidence': 'X-Forwarded-For header bypassed IP-based access control',
         'impact': 'Bypass of IP-based restrictions, unauthorized access to admin endpoints',
+        'screenshot': '',
     })
 
 # HTTP request smuggling
@@ -293,9 +301,24 @@ if '_smuggling_found' in dir() and _smuggling_found:
         'severity': 'MEDIUM',
         'title': 'HTTP Request Smuggling (CL+TE)',
         'url': BASE,
+        'method': 'POST',
         'evidence': 'Server accepted conflicting Content-Length and Transfer-Encoding headers',
         'impact': 'Request smuggling, cache poisoning, bypassing security controls',
+        'screenshot': '',
     })
 
 print(f"[+] HTTP attack phase findings stored")
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all HTTP attack findings:")
+import time
+for finding in _G['FINDINGS']:
+    if 'HTTP' in finding.get('title', '') or 'Header' in finding.get('title', '') or 'Smuggling' in finding.get('title', '') or 'Spoofing' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_16_http_{finding.get('title').replace(' ', '_').lower()}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot shows false positive, remove it from _G['FINDINGS']")
 ```

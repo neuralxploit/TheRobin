@@ -338,5 +338,22 @@
   for f in _acct_findings:
       print(f"  [{f['severity']}] {f['title']}")
   if _acct_findings:
+      # Add screenshot field to each finding
+      for f in _acct_findings:
+          f['screenshot'] = ''
+          f['method'] = 'POST'
+          f['impact'] = 'Account enumeration, unauthorized access, weak authentication'
       _G.setdefault('FINDINGS', []).extend(_acct_findings)
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify account security findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all account security findings:")
+for finding in _G['FINDINGS']:
+    if any(kw in finding.get('title', '') for kw in ['enumeration', 'default', 'password policy', 'lockout']):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_24_acct_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot doesn't show actual vulnerability evidence (e.g., different error messages), it's FALSE POSITIVE — remove it")
   ```

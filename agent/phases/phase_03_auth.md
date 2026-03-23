@@ -1028,7 +1028,6 @@
    ═══════════════════════════════════════════════════════
 
 ---
-
 **MANDATORY — Store authentication findings before moving on:**
 
 ```python
@@ -1041,8 +1040,10 @@ if _G.get('discovered_creds'):
         'severity': 'HIGH',
         'title': f"Default Credentials Found ({len(_G['discovered_creds'])} accounts)",
         'url': _G.get('login_url', BASE + '/login'),
+        'method': 'POST',
         'evidence': f"Working credentials: {_cred_list}",
         'impact': 'Unauthorized access using default or weak credentials',
+        'screenshot': '',
     })
 
 # Store session fixation finding if detected
@@ -1051,9 +1052,23 @@ if _G.get('session_fixation'):
         'severity': 'HIGH',
         'title': 'Session Fixation: Session ID Not Rotated After Login',
         'url': _G.get('login_url', BASE + '/login'),
+        'method': 'POST',
         'evidence': 'Session cookie value remained the same before and after authentication',
         'impact': 'Attacker can fixate session ID and hijack authenticated session',
+        'screenshot': '',
     })
 
 print(f"[+] Stored auth findings: {len(_G.get('discovered_creds', []))} default creds")
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify authentication findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all authentication findings:")
+for finding in _G['FINDINGS']:
+    if any(kw in finding.get('title', '').lower() for kw in ['default credentials', 'session fixation', 'weak password']):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_03_auth_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot doesn't show actual successful login or session evidence, it's FALSE POSITIVE — remove it")
 ```

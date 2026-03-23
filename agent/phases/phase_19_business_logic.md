@@ -387,6 +387,23 @@
           {'severity': 'HIGH' if f['type'] in ('negative-accepted','coupon-reuse',
               'workflow-bypass-post','mass-assignment') else 'MEDIUM',
            'title': f"Business Logic — {f['type']}",
-           'url': f.get('url', ''), 'detail': f} for f in logic_findings
+           'url': f.get('url', ''),
+           'method': f.get('method', 'POST'),
+           'evidence': f.get('evidence', ''),
+           'detail': f,
+           'impact': 'Financial loss, data manipulation, unauthorized operations',
+           'screenshot': ''} for f in logic_findings
       ])
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify business logic findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all business logic findings:")
+for finding in _G['FINDINGS']:
+    if 'Business Logic' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_19_logic_{finding.get('title').replace('Business Logic — ','').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot shows error/rejection, it's a FALSE POSITIVE — remove it")
   ```

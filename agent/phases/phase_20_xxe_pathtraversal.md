@@ -351,6 +351,25 @@
       _G.setdefault('FINDINGS', []).extend([
           {'severity': 'CRITICAL',
            'title': f"{f['type'].upper()} — {f.get('desc','')}",
-           'url': f.get('url', ''), 'detail': f} for f in xxe_lfi_findings
+           'url': f.get('url', ''),
+           'method': f.get('method', 'POST'),
+           'evidence': f.get('evidence', ''),
+           'parameter': f.get('param', ''),
+           'payload': f.get('payload', ''),
+           'impact': 'Read arbitrary files on server, SSRF, internal network access',
+           'screenshot': '',
+           'detail': f} for f in xxe_lfi_findings
       ])
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify XXE/path traversal findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all XXE/path traversal findings:")
+for finding in _G['FINDINGS']:
+    if 'XXE' in finding.get('title', '') or 'PATH' in finding.get('title', '') or 'TRAV' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_20_xxe_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot doesn't show file content (e.g., /etc/passwd), it's a FALSE POSITIVE — remove it")
   ```

@@ -294,6 +294,23 @@
       _G.setdefault('FINDINGS', []).extend([
           {'severity': 'CRITICAL' if f['type'] in ('broken-auth-admin',) else 'HIGH',
            'title': f"API Security — {f['type']}",
-           'url': f.get('url', ''), 'detail': f} for f in api_findings
+           'url': f.get('url', ''),
+           'method': 'GET',
+           'evidence': f.get('evidence', ''),
+           'impact': 'Unauthorized API access, data leakage, admin endpoint exposure',
+           'screenshot': '',
+           'detail': f} for f in api_findings
       ])
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify API findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all API security findings:")
+for finding in _G['FINDINGS']:
+    if 'API' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_21_api_{finding.get('title').replace('API Security — ','').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot shows 401/403/error, it's a FALSE POSITIVE — remove it")
   ```

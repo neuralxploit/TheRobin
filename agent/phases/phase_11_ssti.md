@@ -109,8 +109,26 @@
   if ssti_findings:
       _G.setdefault('FINDINGS', [])
       for sf in ssti_findings:
-          _G['FINDINGS'].append({'severity': 'CRITICAL', 'title': f"SSTI ({sf['engine']}) — {sf['param']}", 'url': sf['url'], 'detail': sf})
+          _G['FINDINGS'].append({
+              'severity': 'CRITICAL',
+              'title': 'Template Injection',
+              'url': sf['url'],
+              'method': sf['method'],
+              'param': sf['param'],
+              'payload': sf['payload'],
+              'evidence': f"Engine: {sf['engine']} — response contains evaluated template output (not in baseline)",
+              'impact': 'Full server-side template injection allows remote code execution, file read, and complete server compromise.',
+              'remediation': 'Never pass user input into template render functions. Use sandboxed template engines and strict input validation.',
+              'screenshot': ''
+          })
       print(f"\n[CRITICAL] SSTI found on {len(ssti_findings)} parameter(s)!")
   else:
       print("[INFO] No SSTI detected")
   ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed SSTI finding, take a browser screenshot:
+   browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+   browser_action(action="screenshot", filename="ssti_proof_<param>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows the template expression not evaluated → REMOVE the finding (false positive)

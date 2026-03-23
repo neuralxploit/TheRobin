@@ -25,6 +25,48 @@ from reportlab.platypus import (
 from reportlab.platypus.tableofcontents import TableOfContents
 from reportlab.lib.colors import HexColor
 
+# ── Screenshot search paths (set by generate_pdf_report) ─────────────────────────
+
+# Global list of paths to search for screenshots, in order of priority
+# Populated by generate_pdf_report() when called
+_SCREENSHOT_SEARCH_PATHS = [Path(".")]
+
+
+def _find_screenshot(screenshot_name: str) -> Path | None:
+    """
+    Find a screenshot file by searching multiple directories.
+
+    Searches in order:
+    1. Current session directory (workspace/session_XXX/)
+    2. workspace/ directory
+    3. Current directory (.)
+
+    Args:
+        screenshot_name: Name of the screenshot file (e.g., "phase_06_sqli_proof.png")
+
+    Returns:
+        Path object if found, None otherwise
+    """
+    if not screenshot_name:
+        return None
+
+    for search_dir in _SCREENSHOT_SEARCH_PATHS:
+        if not search_dir.exists():
+            continue
+
+        # Direct filename match
+        candidate = search_dir / screenshot_name
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+        # Also check for the screenshot_ prefix that browser_action adds
+        if not screenshot_name.startswith("screenshot_"):
+            candidate = search_dir / f"screenshot_{screenshot_name}.png"
+            if candidate.exists() and candidate.is_file():
+                return candidate
+
+    return None
+
 
 # ── Severity colours ──────────────────────────────────────────────────────────
 
@@ -2181,12 +2223,7 @@ def _build_detailed_findings(findings, styles):
         # Screenshot
         screenshot_name = f.get("screenshot", detail.get("screenshot", ""))
         if screenshot_name:
-            _shot_path = None
-            for _sdir in [Path("workspace"), Path(".")]:
-                _sp = _sdir / screenshot_name
-                if _sp.exists():
-                    _shot_path = _sp
-                    break
+            _shot_path = _find_screenshot(screenshot_name)
             if _shot_path:
                 try:
                     from reportlab.platypus import Image as RLImage
@@ -2513,7 +2550,7 @@ def _build_appendix(styles):
 
 # ── Main generator ────────────────────────────────────────────────────────────
 
-def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
+def generate_pdf_report(g: dict, output_path: str = "report.pdf", session_dir: str = None) -> str:
     """
     Generate a professional PDF pentest report from the _G globals dict.
 
@@ -2523,6 +2560,9 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
         The _G persistent globals dict from the REPL.
     output_path : str
         Where to write the PDF file.
+    session_dir : str, optional
+        Path to the session directory containing screenshots.
+        If None, tries to find it from workspace structure.
 
     Returns
     -------
@@ -2531,6 +2571,32 @@ def generate_pdf_report(g: dict, output_path: str = "report.pdf") -> str:
     target = g.get("BASE", g.get("target", "Unknown"))
     scope = g.get("SCOPE", target)
     date_str = datetime.date.today().strftime("%Y-%m-%d")
+
+    # Determine session directory for screenshot lookup
+    # Priority: session_dir arg > _G['SESSION_DIR'] > workspace/session_XXX > workspace > .
+    screenshot_search_paths = [Path(".")]
+
+    if session_dir:
+        screenshot_search_paths.insert(0, Path(session_dir))
+
+    elif "SESSION_DIR" in g:
+        screenshot_search_paths.insert(0, Path(g["SESSION_DIR"]))
+
+    else:
+        # Auto-detect session directory
+        from pathlib import Path as PPath
+        workspace = PPath("workspace")
+        if workspace.exists():
+            # Look for the most recent session_* folder
+            sessions = [d for d in workspace.iterdir() if d.is_dir() and d.name.startswith("session_")]
+            if sessions:
+                latest_session = sorted(sessions, reverse=True)[0]
+                screenshot_search_paths.insert(0, latest_session)
+            screenshot_search_paths.insert(0, workspace)
+
+    # Store search paths globally for use in finding detail generation
+    global _SCREENSHOT_SEARCH_PATHS
+    _SCREENSHOT_SEARCH_PATHS = screenshot_search_paths
 
     # ── Aggregate all findings ────────────────────────────────────────
     all_findings = list(g.get("FINDINGS", []))

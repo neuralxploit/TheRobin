@@ -27,7 +27,7 @@ try:
 except Exception:
     pass
 
-WORKSPACE_DIR = Path("workspace")
+WORKSPACE_DIR = Path(__file__).resolve().parent.parent / "workspace"
 
 TOR_PROXY   = "socks5h://127.0.0.1:9050"
 TOR_ENABLED = False
@@ -767,12 +767,28 @@ window.onload=refresh;
         }.get(by_str.lower(), By.CSS_SELECTOR)
 
     def _save_screenshot(self, b64: str, label: str = "auto") -> str:
-        """Save a base64 screenshot to disk and update the live viewer."""
+        """Save a base64 screenshot to disk and update the live viewer.
+
+        The label can be:
+        - A simple name: 'phase_06_sqli' → saves as 'screenshot_phase_06_sqli_1234567890.png'
+        - A full filename with .png: 'phase_06_sqli_proof.png' → saves as 'phase_06_sqli_proof.png' (exact match)
+
+        Returns:
+            The actual saved filename (for use in findings dict).
+        """
         import base64, time
         ts = int(time.time())
-        fname = f"screenshot_{label}_{ts}.png"
+
+        # Check if label already ends with .png - if so, use it as-is (exact filename)
+        if label.endswith('.png'):
+            fname = label
+        else:
+            # Add timestamp for unique filenames when label is just a name
+            fname = f"screenshot_{label}_{ts}.png"
+
         path = WORKSPACE_DIR / fname
         path.write_bytes(base64.b64decode(b64))
+
         # Update latest symlink / file for live viewer
         latest = WORKSPACE_DIR / "latest_screenshot.png"
         try:

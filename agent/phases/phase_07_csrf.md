@@ -83,8 +83,17 @@
       for cf in csrf_findings:
           _G['FINDINGS'].append({
               'severity': 'HIGH',
-              'title': f"CSRF — POST {cf['url']}",
+              'title': 'CSRF',
               'url': cf['url'], 'detail': cf,
+              'screenshot': '',
+              'remediation': 'Implement anti-CSRF tokens on all state-changing forms. Use SameSite=Strict cookie attribute.',
           })
   print(f"\n=== CSRF SUMMARY: {len(csrf_findings)} vulnerable forms ===")
   ```
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed CSRF finding, take a browser screenshot:
+   browser_action(action="navigate", url="<form_url>")
+   browser_action(action="screenshot", filename="csrf_proof_<form>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows a CSRF token is present → REMOVE the finding (false positive)

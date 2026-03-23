@@ -19,6 +19,7 @@ mcp = FastMCP("robin-tools")
 
 # Lazy-loaded reference to agent.tools
 _tools_module = None
+_session_dir = None
 
 
 def _get_tools():
@@ -27,6 +28,22 @@ def _get_tools():
         from agent import tools as _t
         _tools_module = _t
     return _tools_module
+
+
+def _get_or_create_session_dir():
+    """Get or create the current session directory (workspace/session_YYYYMMDD_HHMMSS/)."""
+    global _session_dir
+    if _session_dir is None:
+        import datetime
+        tools = _get_tools()
+        # Create a timestamped session folder
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        _session_dir = tools.WORKSPACE_DIR / f"session_{ts}"
+        _session_dir.mkdir(parents=True, exist_ok=True)
+        # Update the tools module's WORKSPACE_DIR to point to this session
+        tools.WORKSPACE_DIR = _session_dir
+        print(f"[MCP] Session created: {_session_dir}", file=sys.stderr)
+    return _session_dir
 
 
 # ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -38,6 +55,7 @@ def run_python(code: str) -> str:
     Already available: requests, BeautifulSoup, re, json, base64, hashlib,
     socket, ssl, time, urljoin, urlparse, urlencode, quote, unquote, parse_qs.
     Print findings with [CRITICAL]/[HIGH]/[MEDIUM]/[LOW]/[INFO] labels."""
+    _get_or_create_session_dir()  # Ensure session folder exists
     tools = _get_tools()
     return tools.execute_tool("run_python", {"code": code})
 
@@ -46,6 +64,7 @@ def run_python(code: str) -> str:
 def bash(command: str) -> str:
     """Execute a shell command. Use for nmap, curl, dig, whois, or other CLI tools.
     Prefer run_python for HTTP testing."""
+    _get_or_create_session_dir()
     tools = _get_tools()
     return tools.execute_tool("bash", {"command": command})
 
@@ -53,6 +72,7 @@ def bash(command: str) -> str:
 @mcp.tool()
 def write_file(path: str, content: str) -> str:
     """Save content to a file in the workspace directory."""
+    _get_or_create_session_dir()
     tools = _get_tools()
     return tools.execute_tool("write_file", {"path": path, "content": content})
 
@@ -112,6 +132,7 @@ def browser_action(
     Actions: navigate, source, find_elements, fill, click, submit,
     wait_for, execute_js, cookies, screenshot, wait, close.
     navigate/click/submit/screenshot return a screenshot you can SEE."""
+    _get_or_create_session_dir()
     tools = _get_tools()
     args = {"action": action}
     if url: args["url"] = url
@@ -135,12 +156,264 @@ def osint_recon(
     """Passive OSINT reconnaissance — no active scanning, all passive sources.
     Actions: dork (DuckDuckGo), subdomains (crt.sh + DNS brute),
     crtsh, dns, whois, wayback, harvester."""
+    _get_or_create_session_dir()
     tools = _get_tools()
     args = {"action": action}
     if target: args["target"] = target
     if query: args["query"] = query
     if max_results != 15: args["max_results"] = max_results
     return tools.execute_tool("osint_recon", args)
+
+
+@mcp.tool()
+def get_session_info() -> str:
+    """Get current session information: directory, target URL, created time.
+    Useful to know where screenshots and reports are being saved."""
+    global _session_dir
+    try:
+        import json, datetime
+        session_dir = _get_or_create_session_dir()
+
+        # Try to read session metadata
+        metadata_path = session_dir / "session_metadata.json"
+        if metadata_path.exists():
+            metadata = json.loads(metadata_path.read_text())
+        else:
+            metadata = {}
+
+        # Get current findings count from REPL
+        tools = _get_tools()
+        result = tools.execute_tool("run_python", {"code": """
+import json
+json.dumps({
+    "findings_count": len(_G.get('FINDINGS', [])),
+    "base": _G.get('BASE', ''),
+    "target": _G.get('TARGET', ''),
+    "has_session": 'SESSION_DIR' in _G
+})
+"""})
+
+        try:
+            repl_info = json.loads(result.get("stdout", "{}"))
+        except json.JSONDecodeError:
+            repl_info = {"findings_count": 0, "base": "", "target": "", "has_session": False}
+
+        return json.dumps({
+            "session_dir": str(session_dir),
+            "session_name": session_dir.name,
+            "target": repl_info.get("target") or metadata.get("target", ""),
+            "base_url": repl_info.get("base", ""),
+            "findings_count": repl_info.get("findings_count", 0),
+            "created": metadata.get("timestamp", "unknown"),
+            "has_session": repl_info.get("has_session", False)
+        })
+    except Exception as e:
+        return json.dumps({
+            "error": str(e),
+            "session_dir": str(_session_dir) if _session_dir else "not_created"
+        })
+
+
+@mcp.tool()
+def start_new_session(target_url: str = "", session_name: str = "") -> str:
+    """Start a new pentest session with its own isolated workspace folder.
+    Call this BEFORE starting a new penetration test to isolate all data.
+
+    Args:
+        target_url: Target URL for this pentest (e.g., http://example.com)
+        session_name: Optional custom session name (default: auto-generated timestamp)
+
+    Returns:
+        Session directory path and initialization status."""
+    global _session_dir
+    import datetime
+
+    # Close browser and reset REPL from previous session if exists
+    tools = _get_tools()
+    try:
+        tools.reset_browser()
+        tools.reset_repl()
+    except Exception as e:
+        pass  # Ignore errors if nothing to reset
+
+    # Create new session directory
+    if session_name:
+        # Sanitize session name (remove spaces, special chars)
+        clean_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in session_name)
+        session_ts = f"{clean_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    else:
+        session_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Create session folder under workspace/
+    base_workspace = tools.WORKSPACE_DIR
+    if "session_" in str(base_workspace):
+        # We're already inside a session, go up to workspace root
+        base_workspace = tools.WORKSPACE_DIR.parent
+
+    _session_dir = base_workspace / f"session_{session_ts}"
+    _session_dir.mkdir(parents=True, exist_ok=True)
+
+    # Update tools module's WORKSPACE_DIR to point to this session
+    tools.WORKSPACE_DIR = _session_dir
+
+    # Initialize session in the REPL _G dict
+    init_code = f"""
+import json, os
+BASE = "{target_url}"
+_G['BASE'] = "{target_url}"
+_G['SESSION_DIR'] = str(_session_dir)
+_G['FINDINGS'] = []
+_G['TARGET'] = "{target_url}"
+_G['TIMESTAMP'] = "{datetime.datetime.now().isoformat()}"
+print(f"[NEW SESSION] Workspace: {{_session_dir}}")
+print(f"[NEW SESSION] Target: {target_url}")
+"""
+    tools.execute_tool("run_python", {"code": init_code})
+
+    # Save session metadata
+    metadata = {
+        "target": target_url,
+        "session_name": session_name or f"session_{session_ts}",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "session_dir": str(_session_dir)
+    }
+    (_session_dir / "session_metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    return json.dumps({
+        "success": True,
+        "session_dir": str(_session_dir),
+        "target_url": target_url,
+        "session_name": session_name or f"session_{session_ts}",
+        "message": f"New session started: {_session_dir.name}"
+    })
+
+
+@mcp.tool()
+def generate_report(output_filename: str = "report.pdf") -> str:
+    """Generate the final PDF penetration test report from the current session findings.
+    All findings with screenshots will pull images from the session folder.
+    The report is saved in the current session directory."""
+    import sys
+    # Ensure session directory exists
+    session_dir = _get_or_create_session_dir()
+    tools = _get_tools()
+
+    # Import the PDF generator
+    try:
+        from agent.report_pdf import generate_pdf_report
+    except ImportError as e:
+        return json.dumps({
+            "error": f"Failed to import report generator: {e}",
+            "session_dir": str(session_dir)
+        })
+
+    # Save the current _G state to a file so the report generator can read it
+    tools.execute_tool("run_python", {"code": "_save_state()"})
+
+    # Read the saved _G state
+    state_path = tools.WORKSPACE_DIR / ".pentest_state.json"
+    if not state_path.exists():
+        return json.dumps({
+            "error": "No _G state found. Run run_python with analysis code first.",
+            "session_dir": str(session_dir)
+        })
+
+    import json
+    try:
+        with open(state_path) as f:
+            g_state = json.load(f)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to read _G state: {e}",
+            "state_path": str(state_path),
+            "session_dir": str(session_dir)
+        })
+
+    # Generate the report
+    output_path = session_dir / output_filename
+
+    try:
+        pdf_path = generate_pdf_report(
+            g=g_state,
+            output_path=str(output_path),
+            session_dir=str(session_dir)
+        )
+    except Exception as e:
+        import traceback
+        return json.dumps({
+            "error": f"Failed to generate report: {e}",
+            "traceback": traceback.format_exc(),
+            "session_dir": str(session_dir),
+            "output_path": str(output_path)
+        })
+
+    return json.dumps({
+        "success": True,
+        "pdf_path": pdf_path,
+        "session_dir": str(session_dir),
+        "findings_count": len(g_state.get("FINDINGS", [])),
+        "message": f"Report generated: {pdf_path}"
+    })
+
+
+@mcp.tool()
+def restore_state_from_json() -> str:
+    """Restore ALL session state from .pentest_state.json (complete state, not just summary).
+    Call this when starting a new session to continue from where you left off.
+    This restores ALL findings, tested endpoints, session data, etc."""
+    import json
+    session_dir = _get_or_create_session_dir()
+    tools = _get_tools()
+
+    # Check if state file exists
+    state_path = session_dir / ".pentest_state.json"
+    if not state_path.exists():
+        return json.dumps({
+            "error": "No state file found to restore. Was compact_state called?",
+            "session_dir": str(session_dir)
+        })
+
+    # Try to read and verify state
+    try:
+        with open(state_path) as f:
+            state_data = json.load(f)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to read state file: {e}",
+            "session_dir": str(session_dir)
+        })
+
+    # Restore the state into the REPL _G
+    restore_code = f"""
+import json, os
+
+# Load state from file
+with open('{state_path}') as f:
+    saved_state = json.load(f)
+
+# Restore all keys into _G
+restored_count = 0
+for key, value in saved_state.items():
+    _G[key] = value
+    restored_count += 1
+
+print(f"[RESTORE] Restored {{restored_count}} keys from .pentest_state.json")
+print(f"[RESTORE] Key items: BASE={_G.get('BASE', '')}, FINDINGS count={{len(_G.get('FINDINGS', []))}}")
+print(f"[RESTORE] Tested endpoints: {{len(_G.get('ALL_LINKS', set()))}}")
+"""
+
+    result = tools.execute_tool("run_python", {"code": restore_code})
+
+    return json.dumps({
+        "success": True,
+        "session_dir": str(session_dir),
+        "state_file": str(state_path),
+        "keys_restored": len(state_data),
+        "findings_count": len(state_data.get("FINDINGS", [])),
+        "base": state_data.get("BASE", ""),
+        "output": result.get("stdout", ""),
+        "message": f"Restored {len(state_data)} keys from .pentest_state.json"
+    })
 
 
 @mcp.tool()
@@ -159,19 +432,8 @@ def compact_state(summary: str) -> str:
 
     This is NOT optional — call it after every 3-4 phases to checkpoint."""
     import datetime
+    session_dir = _get_or_create_session_dir()
     tools = _get_tools()
-    workspace = tools.WORKSPACE_DIR
-
-    # Find the active session directory
-    session_dir = workspace
-    try:
-        sessions = sorted(workspace.iterdir())
-        for d in reversed(sessions):
-            if d.is_dir() and "session" in d.name:
-                session_dir = d
-                break
-    except Exception:
-        pass
 
     # Write the summary
     memory_path = session_dir / "pentest_memory.md"
@@ -183,16 +445,17 @@ def compact_state(summary: str) -> str:
     memory_path.parent.mkdir(parents=True, exist_ok=True)
     memory_path.write_text(content)
 
-    # Also save _G state via the REPL
+    # Also save _G state via the REPL (THIS is the complete state!)
     tools.execute_tool("run_python", {"code": "_save_state()"})
 
     return json.dumps({
         "status": "saved",
         "file": str(memory_path),
         "message": (
-            f"State saved to {memory_path}. "
-            "If context gets too large, user can start a new session and say "
-            "'continue pentest' — you will read this file to recover all state."
+            f"State saved to {memory_path} in session folder: {session_dir.name}. "
+            "ALL _G data also saved to .pentest_state.json (complete state). "
+            "To continue later, use restore_state_from_json() which loads the complete state, "
+            "not just the summary."
         ),
     })
 

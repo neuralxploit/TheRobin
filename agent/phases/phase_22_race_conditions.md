@@ -228,6 +228,23 @@
       _G.setdefault('FINDINGS', []).extend([
           {'severity': 'CRITICAL' if f['type'] == 'double-spend' else 'HIGH',
            'title': f"Race Condition — {f['type']}",
-           'url': f.get('url', ''), 'detail': f} for f in race_findings
+           'url': f.get('url', ''),
+           'method': 'POST',
+           'evidence': f.get('desc', ''),
+           'impact': 'Financial loss, duplicate resource creation, unauthorized operations',
+           'screenshot': '',
+           'detail': f} for f in race_findings
       ])
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify race condition findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all race condition findings:")
+for finding in _G['FINDINGS']:
+    if 'Race Condition' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_22_race_{finding.get('title').replace('Race Condition — ','').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  Race conditions need manual verification via log analysis or transaction history. Screenshot should show evidence of the race")
   ```

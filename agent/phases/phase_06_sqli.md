@@ -305,7 +305,7 @@
       _sev = 'CRITICAL' if _sf.get('type') in ('error-based', 'auth-bypass') else 'HIGH'
       _G['FINDINGS'].append({
           'severity': _sev,
-          'title': f"SQL Injection ({_sf.get('type','SQLi')}) — {_sf.get('field','')} via {_sf.get('method','').upper()}",
+          'title': 'SQL Injection',
           'url': _sf.get('url', ''),
           'method': _sf.get('method', 'GET'),
           'parameter': _sf.get('field', ''),
@@ -314,8 +314,17 @@
           'request': _sf.get('request', ''),
           'response': _sf.get('response', ''),
           'impact': 'Database extraction, authentication bypass, data manipulation',
+          'remediation': 'Use parameterized queries or prepared statements. Apply input validation and least-privilege database accounts.',
+          'screenshot': '',
       })
   ```
 
   ONLY report SQLi if error strings appear OR boolean diff > 200 bytes with real data content.
   NEVER report SQLi based only on response size difference without content verification.
+
+AFTER RUNNING THIS BLOCK — MANDATORY:
+1. For each confirmed SQLi finding, take a browser screenshot:
+   browser_action(action="navigate", url="<vulnerable_url_with_payload>")
+   browser_action(action="screenshot", filename="sqli_proof_<field>.png")
+2. Update each finding's 'screenshot' field in _G['FINDINGS']
+3. If the screenshot shows a WAF block, 404, or error page → REMOVE the finding (false positive)

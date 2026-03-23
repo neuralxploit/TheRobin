@@ -266,5 +266,24 @@
   for f in _sens_findings:
       print(f"  [{f['severity']}] {f['title']}: {f['url']}")
   if _sens_findings:
+      # Add screenshot field to each finding
+      for f in _sens_findings:
+          f['screenshot'] = ''
+          f['method'] = 'GET'
+          f['impact'] = 'Information disclosure, credential exposure, internal system access'
       _G.setdefault('FINDINGS', []).extend(_sens_findings)
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify sensitive file findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all sensitive file findings:")
+for finding in _G['FINDINGS']:
+    if any(kw in finding.get('title', '').lower() for kw in ['.git', '.env', 'backup', 'exposed', 'admin', 'debug', 'phpinfo', 'actuator']):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_23_sens_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding:")
+print("    - If screenshot shows catch-all HTML (not real file), it's FALSE POSITIVE — remove it")
+print("    - Verify the screenshot shows ACTUAL file content (KEY=VALUE for .env, SQL statements for backup.sql, etc.)")
   ```

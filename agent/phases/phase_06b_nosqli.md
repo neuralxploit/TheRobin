@@ -208,6 +208,23 @@
       _G.setdefault('FINDINGS', []).extend([
           {'severity': 'CRITICAL' if 'bypass' in f['type'] else 'HIGH',
            'title': f"NoSQL Injection — {f['type']} ({f['desc'][:40]})",
-           'url': f['url'], 'detail': f} for f in nosqli_findings
+           'url': f['url'],
+           'method': f.get('method', 'POST'),
+           'evidence': f.get('desc', ''),
+           'impact': 'Authentication bypass, unauthorized data access',
+           'screenshot': '',
+           'detail': f} for f in nosqli_findings
       ])
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify NoSQL injection findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all NoSQL injection findings:")
+for finding in _G['FINDINGS']:
+    if 'NoSQL' in finding.get('title', '') or 'nosql' in finding.get('title', '').lower():
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_06b_nosqli_{finding.get('title').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot shows error/rejection/login page, it's FALSE POSITIVE — remove it")
   ```

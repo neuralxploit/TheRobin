@@ -513,7 +513,20 @@
             'request': _idf.get('request', ''),
             'response': _idf.get('response', ''),
             'impact': 'Unauthorized access to other users data, privilege escalation',
+            'screenshot': '',
         })
+
+# POST-PHASE SCREENSHOT CHECKPOINT — verify IDOR findings with screenshots
+print("\n[SCREENSHOT CHECKPOINT] Verify all IDOR findings:")
+for finding in _G['FINDINGS']:
+    if 'IDOR' in finding.get('title', ''):
+        if not finding.get('screenshot'):
+            print(f"  [REQUIRED] Take screenshot for: {finding.get('title', '')}")
+            print(f"    Navigate to: {finding.get('url')}")
+            print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
+            print(f"    browser_action(action='screenshot', filename='phase_17_idor_{finding.get('title').replace(' ', '_').replace('IDOR_','').lower()[:40]}.png')")
+            print(f"    Update finding['screenshot'] with the filename")
+print("\n  After confirming each finding: if screenshot shows access denied/404/error, it's a FALSE POSITIVE — remove it")
     ```
 
   IDOR CONFIRMATION RULE — only report if you saw REAL sensitive data:
