@@ -1070,8 +1070,10 @@ def tools():
         if action == 'ping' and target:
             try:
                 # A03: Direct shell injection — no sanitization
+                import platform as _plat
+                ping_flag = "-n" if _plat.system() == "Windows" else "-c"
                 result = subprocess.check_output(
-                    f"ping -c 2 {target}", shell=True,
+                    f"ping {ping_flag} 2 {target}", shell=True,
                     stderr=subprocess.STDOUT, timeout=10
                 )
                 output = result.decode('utf-8', errors='replace')

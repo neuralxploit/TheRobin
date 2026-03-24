@@ -275,7 +275,12 @@ def whois_lookup(domain: str) -> dict:
         return {"domain": domain, "parsed": fields, "raw": output}
 
     except FileNotFoundError:
-        return {"error": "whois not installed (apt install whois)", "domain": domain}
+        import platform
+        if platform.system() == "Windows":
+            hint = "whois not installed (install from https://learn.microsoft.com/en-us/sysinternals/downloads/whois)"
+        else:
+            hint = "whois not installed (apt install whois)"
+        return {"error": hint, "domain": domain}
     except Exception as e:
         return {"error": str(e), "domain": domain}
 

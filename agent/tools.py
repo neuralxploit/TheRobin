@@ -35,9 +35,20 @@ TOR_ENABLED = False
 
 def _find_python() -> str:
     project_root = Path(__file__).parent.parent
-    venv_python = project_root / "venv" / "bin" / "python3"
-    if venv_python.exists():
-        return str(venv_python)
+    # Check both .venv and venv, with platform-appropriate paths
+    if sys.platform == "win32":
+        candidates = [
+            project_root / ".venv" / "Scripts" / "python.exe",
+            project_root / "venv" / "Scripts" / "python.exe",
+        ]
+    else:
+        candidates = [
+            project_root / ".venv" / "bin" / "python3",
+            project_root / "venv" / "bin" / "python3",
+        ]
+    for p in candidates:
+        if p.exists():
+            return str(p)
     return sys.executable
 
 _PYTHON = _find_python()
@@ -198,7 +209,7 @@ def _restore_state():
             if 'BASE' in state and 'session' not in _G:
                 _s = requests.Session()
                 _s.verify = False
-                _s.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0'
+                _s.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
                 _G['session'] = _s
                 _G['session_a'] = _s
             if restored:
@@ -617,36 +628,64 @@ class _BrowserSession:
         self._lock = threading.Lock()
 
     def _find_chromium(self) -> tuple:
-        """Locate Chromium/Chrome binary and chromedriver (Linux + macOS)."""
+        """Locate Chromium/Chrome binary and chromedriver (Linux, macOS, Windows)."""
         import platform
-        binary_candidates = [
-            # Linux
-            "/snap/chromium/current/usr/lib/chromium-browser/chrome",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/chromium",
-            "/usr/bin/google-chrome-stable",
-            "/usr/bin/google-chrome",
-        ]
-        driver_candidates = [
-            "/snap/chromium/current/usr/lib/chromium-browser/chromedriver",
-            "/usr/bin/chromedriver",
-            "/usr/local/bin/chromedriver",
-        ]
-        if platform.system() == "Darwin":
+        system = platform.system()
+        binary_candidates = []
+        driver_candidates = []
+
+        if system == "Windows":
+            # Common Windows Chrome/Chromium install paths
+            program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+            program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+            local_app_data = os.environ.get("LOCALAPPDATA", "")
+            binary_candidates = [
+                os.path.join(program_files, "Google", "Chrome", "Application", "chrome.exe"),
+                os.path.join(program_files_x86, "Google", "Chrome", "Application", "chrome.exe"),
+                os.path.join(local_app_data, "Google", "Chrome", "Application", "chrome.exe") if local_app_data else "",
+                os.path.join(program_files, "Chromium", "Application", "chrome.exe"),
+                os.path.join(program_files_x86, "Chromium", "Application", "chrome.exe"),
+                os.path.join(program_files, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            ]
+            binary_candidates = [c for c in binary_candidates if c]
+            # chromedriver — selenium manager will auto-download if not found
+            driver_candidates = []
+        elif system == "Darwin":
             binary_candidates = [
                 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                 "/Applications/Chromium.app/Contents/MacOS/Chromium",
                 "/opt/homebrew/bin/chromium",
                 "/usr/local/bin/chromium",
-            ] + binary_candidates
+            ]
             driver_candidates = [
                 "/opt/homebrew/bin/chromedriver",
                 "/usr/local/bin/chromedriver",
-            ] + driver_candidates
-        binary = next(
-            (c for c in binary_candidates if os.path.isfile(c) and os.access(c, os.X_OK)),
-            None,
-        )
+            ]
+        else:
+            # Linux
+            binary_candidates = [
+                "/snap/chromium/current/usr/lib/chromium-browser/chrome",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/google-chrome",
+            ]
+            driver_candidates = [
+                "/snap/chromium/current/usr/lib/chromium-browser/chromedriver",
+                "/usr/bin/chromedriver",
+                "/usr/local/bin/chromedriver",
+            ]
+
+        if system == "Windows":
+            binary = next(
+                (c for c in binary_candidates if os.path.isfile(c)),
+                None,
+            )
+        else:
+            binary = next(
+                (c for c in binary_candidates if os.path.isfile(c) and os.access(c, os.X_OK)),
+                None,
+            )
         driver = next(
             (c for c in driver_candidates if os.path.isfile(c) and os.access(c, os.X_OK)),
             None,
@@ -661,8 +700,11 @@ class _BrowserSession:
         binary, chromedriver = self._find_chromium()
         if not binary:
             import platform
-            if platform.system() == "Darwin":
+            system = platform.system()
+            if system == "Darwin":
                 hint = "Install: brew install --cask chromium  (or use Google Chrome)"
+            elif system == "Windows":
+                hint = "Install Google Chrome from https://www.google.com/chrome/"
             else:
                 hint = "Install: sudo snap install chromium"
             raise RuntimeError(f"Chromium/Chrome not found. {hint}")
@@ -789,12 +831,17 @@ window.onload=refresh;
         path = WORKSPACE_DIR / fname
         path.write_bytes(base64.b64decode(b64))
 
-        # Update latest symlink / file for live viewer
+        # Update latest screenshot for live viewer
+        # Use file copy on Windows (symlinks require admin), symlink elsewhere
         latest = WORKSPACE_DIR / "latest_screenshot.png"
         try:
             if latest.is_symlink() or latest.exists():
                 latest.unlink()
-            latest.symlink_to(path.name)
+            if sys.platform == "win32":
+                import shutil
+                shutil.copy2(path, latest)
+            else:
+                latest.symlink_to(path.name)
         except Exception:
             pass
         return fname

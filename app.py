@@ -10,7 +10,8 @@ from pathlib import Path
 from datetime import datetime
 
 from agent.loop import AgentLoop
-from agent.ollama import list_models
+from agent.ollama import list_models as list_ollama_models
+from agent.lmstudio import list_models as list_lmstudio_models
 from agent.tools import WORKSPACE_DIR
 from ui.console import PentestConsole
 
@@ -89,19 +90,27 @@ class App:
         """Main application entry point."""
         session_dir = self._setup_workspace()
 
-        # Check if user specified a Claude model — skip Ollama detection
-        is_claude = (
-            self.session.get("MODEL", "").lower().startswith("claude")
-            or (self.model_override or "").lower().startswith("claude")
-        )
+        # Check if user specified a Claude or LM Studio model
+        model_str = (self.session.get("MODEL", "") or self.model_override or "").lower()
+        is_claude = model_str.startswith("claude")
+        is_lmstudio = model_str.startswith("lmstudio:")
 
-        # Detect Ollama models (skip if using Claude)
-        models = list_models() if not is_claude else []
+        # Detect available models from backends (skip network probes for explicit model)
+        models = []
+        if not is_claude and not is_lmstudio:
+            models = list_ollama_models()
+        if not is_claude:
+            lms_models = list_lmstudio_models()
+            if lms_models:
+                models = [f"lmstudio:{m}" for m in lms_models] + models
 
         if self.session["MODEL"]:
             self.model = self.session["MODEL"]
         elif is_claude:
             self.model = self.model_override or "claude-sonnet-4-20250514"
+            self.session["MODEL"] = self.model
+        elif is_lmstudio:
+            self.model = self.model_override
             self.session["MODEL"] = self.model
         else:
             self.model = pick_default_model(models)
@@ -115,14 +124,17 @@ class App:
         self.ui.print_banner(models, self.model or "none")
 
         if not self.model:
-            self.ui.print_system("No Ollama model available. Start Ollama first.")
+            self.ui.print_system(
+                "No model available. Start Ollama or LM Studio, "
+                "or use a Claude model (--model claude-sonnet-4-20250514)."
+            )
             return
 
         if is_claude:
             import os
             if not os.environ.get("ANTHROPIC_API_KEY"):
                 self.ui.print_system(
-                    "⚠ ANTHROPIC_API_KEY not set. Export it before running:\n"
+                    "ANTHROPIC_API_KEY not set. Export it before running:\n"
                     "  export ANTHROPIC_API_KEY=sk-ant-..."
                 )
                 return
@@ -264,7 +276,7 @@ class App:
                 self.ui.print_system("  set MODE     webapp | osint | full")
                 self.ui.print_system("  set TOR      on | off  (route HTTP through Tor localhost:9050)")
                 self.ui.print_system("  set HEADERS  'X-Bug-Bounty: HackerOne-username'  (added to all requests)")
-                self.ui.print_system("  set MODEL    glm-4.7:cloud")
+                self.ui.print_system("  set MODEL    glm-4.7:cloud  |  lmstudio:qwen2.5-coder-32b  |  claude-sonnet-4-20250514")
                 self.ui.print_system("  run          — start the pentest")
 
             elif cmd == "model" and len(parts) >= 2:
@@ -480,8 +492,10 @@ class App:
                 self.session["MODEL"] = arg
                 self.ui.print_system(f"Switched to model: {arg}")
             else:
-                models = list_models()
-                self.ui.print_system(f"Available: {', '.join(models)}")
+                ollama_models = list_ollama_models()
+                lms_models = [f"lmstudio:{m}" for m in list_lmstudio_models()]
+                all_models = lms_models + ollama_models
+                self.ui.print_system(f"Available: {', '.join(all_models) if all_models else '(none)'}")
                 self.ui.print_system(f"Current:   {self.model}")
             return True
 

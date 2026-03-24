@@ -82,7 +82,13 @@ chmod +x run.sh
 # Generate .mcp.json for Claude Code
 echo ""
 echo "  Generating .mcp.json for Claude Code..."
-sed "s|__REPO_ROOT__|${REPO_ROOT}|g" "${REPO_ROOT}/.mcp.json.template" > "${REPO_ROOT}/.mcp.json"
+# Detect Windows (Git Bash / MSYS / Cygwin) vs Unix for Python path
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    PYTHON_PATH="${REPO_ROOT}/.venv/Scripts/python.exe"
+else
+    PYTHON_PATH="${REPO_ROOT}/.venv/bin/python3"
+fi
+sed -e "s|__REPO_ROOT__|${REPO_ROOT}|g" -e "s|__PYTHON_PATH__|${PYTHON_PATH}|g" "${REPO_ROOT}/.mcp.json.template" > "${REPO_ROOT}/.mcp.json"
 echo "  [OK] .mcp.json generated"
 
 # Patch ~/.config/opencode/opencode.json if OpenCode is installed
@@ -97,7 +103,8 @@ with open(cfg_path) as f:
     cfg = json.load(f)
 cfg.setdefault("mcp", {})
 cfg["mcp"]["robin-tools"] = {
-    "command": [f"{repo_root}/.venv/bin/python3", f"{repo_root}/mcp_server.py"],
+    "command": f"{repo_root}/.venv/bin/python3",
+    "args": [f"{repo_root}/mcp_server.py"],
     "enabled": True,
     "timeout": 300000,
     "type": "local"

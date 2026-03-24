@@ -25,20 +25,29 @@ from .tools import TOOL_SCHEMAS, execute_tool
 from .prompts import get_system_prompt
 
 # ── LLM backend routing ────────────────────────────────────────────────────
-# If model starts with "claude", route to Claude API; otherwise use Ollama.
+# Route by model prefix: "claude" → Claude API, "lmstudio:" → LM Studio, else → Ollama.
 def _is_claude(model: str) -> bool:
     return model and model.lower().startswith("claude")
+
+def _is_lmstudio(model: str) -> bool:
+    return model and model.lower().startswith("lmstudio:")
 
 def stream_chat(model, messages, tools, on_token=None):
     if _is_claude(model):
         from .claude_api import stream_chat as _claude_stream
         return _claude_stream(model, messages, tools, on_token=on_token)
+    if _is_lmstudio(model):
+        from .lmstudio import stream_chat as _lms_stream
+        return _lms_stream(model, messages, tools, on_token=on_token)
     return _ollama_stream(model, messages, tools, on_token=on_token)
 
 def simple_chat(model, messages, tools):
     if _is_claude(model):
         from .claude_api import simple_chat as _claude_simple
         return _claude_simple(model, messages, tools)
+    if _is_lmstudio(model):
+        from .lmstudio import simple_chat as _lms_simple
+        return _lms_simple(model, messages, tools)
     return _ollama_simple(model, messages, tools)
 
 

@@ -32,17 +32,25 @@ Examples:
   python main.py -t target.com --mode osint
   python main.py -t https://target.com --mode full -s target.com,api.target.com
   python main.py -m glm-5:cloud -t https://target.com
+  python main.py -m lmstudio:qwen2.5-coder-32b -t https://target.com
+  python main.py -T targets.txt --mode full
         """,
     )
-    parser.add_argument(
+    target_group = parser.add_mutually_exclusive_group()
+    target_group.add_argument(
         "--target", "-t",
         metavar="URL",
         help="Target URL (webapp) or domain (osint/full mode)",
     )
+    target_group.add_argument(
+        "--targets-file", "-T",
+        metavar="FILE",
+        help="File containing target URLs (one per line). Runs each target sequentially.",
+    )
     parser.add_argument(
         "--model", "-m",
         metavar="MODEL",
-        help="Ollama model (e.g. glm-4.7:cloud)",
+        help="Model name: Ollama (glm-4.7:cloud), LM Studio (lmstudio:model-name), or Claude (claude-sonnet-4-20250514)",
     )
     parser.add_argument(
         "--username", "-u",
@@ -77,18 +85,43 @@ Examples:
     )
     args = parser.parse_args()
 
+    # Collect targets — either single URL or from file
+    targets = []
+    if args.targets_file:
+        targets_path = Path(args.targets_file)
+        if not targets_path.is_file():
+            print(f"Error: targets file not found: {args.targets_file}")
+            sys.exit(1)
+        targets = [
+            line.strip() for line in targets_path.read_text().splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        if not targets:
+            print(f"Error: no targets found in {args.targets_file}")
+            sys.exit(1)
+        print(f"Loaded {len(targets)} target(s) from {args.targets_file}")
+        if args.username or args.password:
+            print(f"WARNING: Credentials will be sent to ALL {len(targets)} targets")
+    else:
+        targets = [args.target] if args.target else [None]
+
     try:
-        app = App(
-            model_override=args.model,
-            target=args.target,
-            username=args.username,
-            password=args.password,
-            scope=args.scope,
-            mode=args.mode,
-            tor=args.tor,
-            headers=args.headers,
-        )
-        app.run()
+        for i, target in enumerate(targets):
+            if len(targets) > 1:
+                print(f"\n{'='*60}")
+                print(f"  Target {i+1}/{len(targets)}: {target}")
+                print(f"{'='*60}\n")
+            app = App(
+                model_override=args.model,
+                target=target,
+                username=args.username,
+                password=args.password,
+                scope=args.scope,
+                mode=args.mode,
+                tor=args.tor,
+                headers=args.headers,
+            )
+            app.run()
     except KeyboardInterrupt:
         print("\n\nExiting. Stay ethical.")
         sys.exit(0)

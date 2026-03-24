@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "robin-tools": {
-      "command": "__REPO_ROOT__/.venv/bin/python3",
+      "command": "__PYTHON_PATH__",
       "args": ["mcp_server.py"],
       "cwd": "__REPO_ROOT__"
     }
