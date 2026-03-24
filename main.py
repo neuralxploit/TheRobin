@@ -120,6 +120,7 @@ Examples:
                 mode=args.mode,
                 tor=args.tor,
                 headers=args.headers,
+                batch=bool(args.targets_file),
             )
             app.run()
     except KeyboardInterrupt:

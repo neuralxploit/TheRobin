@@ -50,6 +50,7 @@ class App:
         cookie: str = None,
         tor: bool = False,
         headers: str = None,
+        batch: bool = False,
     ):
         self.ui = PentestConsole()
         self.model_override = model_override
@@ -58,6 +59,7 @@ class App:
         self._running = True
         self._agent_busy = threading.Event()
         self._cleared = False
+        self._batch = batch
 
         # Session options — shown in Metasploit-style table, editable before run
         self.session = {
@@ -140,10 +142,11 @@ class App:
                 return
 
         # ── Metasploit-style setup phase ──────────────────────────────────────
-        # Always show the options table and let the user configure before running
-        self._setup_phase()
-        if not self._running:
-            return
+        # In batch mode, skip interactive setup — target and model are already set
+        if not self._batch:
+            self._setup_phase()
+            if not self._running:
+                return
 
         # Init agent with chosen model
         self.model = self.session["MODEL"] or self.model
@@ -164,6 +167,10 @@ class App:
         if initial:
             self.ui.print_user(initial)
             self._run_agent(initial)
+
+        # In batch mode, run the single target and return (no interactive loop)
+        if self._batch:
+            return
 
         # Main input loop
         while self._running:
