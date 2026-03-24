@@ -2,7 +2,7 @@
 # Run once: powershell -ExecutionPolicy Bypass -File setup.ps1
 # Then use: .\run.ps1  OR  .venv\Scripts\activate && python main.py
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $RepoRoot
 
@@ -56,8 +56,14 @@ $VenvPip = Join-Path $RepoRoot "$VenvDir\Scripts\pip.exe"
 
 Write-Host ""
 Write-Host "  Installing dependencies..."
-& $VenvPip install --upgrade pip --quiet 2>$null
-& $VenvPip install -r requirements.txt --quiet 2>$null
+$ErrorActionPreference = "SilentlyContinue"
+& $VenvPip install --upgrade pip --quiet 2>&1 | Out-Null
+& $VenvPip install -r requirements.txt --quiet 2>&1 | Out-Null
+$ErrorActionPreference = "Continue"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  [ERROR] Failed to install dependencies" -ForegroundColor Red
+    exit 1
+}
 Write-Host "  [OK] Dependencies installed"
 
 # Check for Chrome
