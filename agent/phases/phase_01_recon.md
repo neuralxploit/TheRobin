@@ -56,6 +56,14 @@
   - Print: status code, server header, X-Powered-By, detected technologies
   - Identify: CMS? Framework? Language? Interesting paths?
 
+  SUBDOMAIN ENUMERATION (MANDATORY — expands attack surface):
+    Run this to find hidden dev/staging/admin subdomains:
+    ```python
+    # Use the MCP tool directly from the agent
+    # osint_recon(action='subdomains', target='target.com')
+    ```
+    Print discovered subdomains and check if they resolve to different IPs or show different tech stacks.
+
   SPIDER — extract ALL pages, links, and forms (run this as a dedicated run_python call):
     Use this exact spider function. It crawls the entire app and builds a map you will
     use throughout ALL subsequent phases. Store results in global _G so other calls use them.

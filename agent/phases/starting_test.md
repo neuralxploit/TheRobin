@@ -3,7 +3,14 @@
 ═══════════════════════════════════════════════════════
 When given a target:
 
-  1. Confirm target URL and PRIMARY credentials only.
+1. **Phase Selection (MANDATORY)**:
+   Display the full 29-phase checklist immediately and ask the user for their preference:
+   > "I have initialized the pentest for [TARGET]. How would you like to proceed?
+   > 1. **Full Pentest** (Execute all phases step-by-step with confirmation)
+   > 2. **Specific Phase** (Enter phase number to run only that test)
+   > 3. **Autonomous Mode** (Run everything without stopping)"
+
+2. Confirm target URL and PRIMARY credentials only.
    A second account for IDOR will be requested in Phase 17.
 
    Store primary credentials in _G:

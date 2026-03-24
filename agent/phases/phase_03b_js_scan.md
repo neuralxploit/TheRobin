@@ -20,39 +20,52 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      # API_KEY patterns are case-SENSITIVE — AWS/GitHub/Stripe formats are strict.
      # Do NOT use re.IGNORECASE on API_KEY patterns; it causes false positives
      # (e.g. AKIASIOcg0ACwwBC0EAI has lowercase letters so it is NOT a real AWS key).
-     JS_SECRET_PATTERNS = {
-         'API_KEY': [
-             # Google API key (case-sensitive prefix AIza)
-             (r'AIza[A-Za-z0-9_\-]{35}', 0),
-             # AWS long-term key: MUST be AKIA + exactly 16 UPPERCASE alphanumeric
-             (r'AKIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
-             # AWS temporary STS key
-             (r'ASIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
-             # AWS other IAM identifiers
-             (r'(?:AGPA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}(?![A-Z0-9])', 0),
-             # Stripe live/test secret key (exactly 24 chars after prefix)
-             (r'sk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
-             (r'sk_test_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
-             (r'rk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
-             # GitHub tokens (strict prefix + exact length)
-             (r'ghp_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'gho_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'ghs_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'ghr_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'github_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])', 0),
-             # Slack (strict digit-block format — no IGNORECASE)
-             (r'xoxb-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{24}', 0),
-             (r'xoxp-[0-9]{8,13}-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{32}', 0),
-             # SendGrid API key
-             (r'SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}', 0),
-             # Private key PEM headers
-             (r'-----BEGIN (?:RSA|EC|DSA|OPENSSH) PRIVATE KEY-----', 0),
-             # Twilio auth token
-             (r'SK[a-f0-9]{32}', 0),
-             # Mailgun API key
-             (r'key-[a-f0-9]{32}', 0),
-         ],
-         'SECRET_TOKEN': [
+    JS_SECRET_PATTERNS = {
+        'API_KEY': [
+            # Google API key (case-sensitive prefix AIza)
+            (r'AIza[A-Za-z0-9_\-]{35}', 0),
+            # AWS long-term key: MUST be AKIA + exactly 16 UPPERCASE alphanumeric
+            (r'AKIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
+            # AWS temporary STS key
+            (r'ASIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
+            # AWS other IAM identifiers
+            (r'(?:AGPA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}(?![A-Z0-9])', 0),
+            # Firebase API Key
+            (r'AIzaSy[A-Za-z0-9_\-]{33}', 0),
+            # Azure Search/Storage
+            (r'[a-zA-Z0-9]{32}AzSe[a-zA-Z0-9]{8}', 0),
+            # DigitalOcean
+            (r'dop_v1_[a-f0-9]{64}', 0),
+            # Heroku
+            (r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 0),
+            # Stripe live/test secret key (exactly 24 chars after prefix)
+            (r'sk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
+            (r'sk_test_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
+            (r'rk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
+            # GitHub tokens (strict prefix + exact length)
+            (r'ghp_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'gho_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'ghs_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'ghr_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'github_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])', 0),
+            # Slack (strict digit-block format — no IGNORECASE)
+            (r'xoxb-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{24}', 0),
+            (r'xoxp-[0-9]{8,13}-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{32}', 0),
+            # SendGrid API key
+            (r'SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}', 0),
+            # Private key PEM headers
+            (r'-----BEGIN (?:RSA|EC|DSA|OPENSSH) PRIVATE KEY-----', 0),
+            # Twilio auth token
+            (r'SK[a-f0-9]{32}', 0),
+            # Mailgun API key
+            (r'key-[a-f0-9]{32}', 0),
+        ],
+        'API_ENDPOINT_HINT': [
+            # Extracts potential hidden API routes from JS strings
+            (r'["\'](/(?:api|v[0-9]|rest|gql|graph|admin|v1|v2|v3)/[a-zA-Z0-9_\-/]+)["\']', 0),
+        ],
+        'SECRET_TOKEN': [
+
              # keyword = "value" or keyword: "value" with quotes required.
              # Value must be 20+ chars. Word boundary on the keyword.
              (r'\b(?:secret[_\-]?key|api[_\-]?secret|jwt[_\-]?secret|signing[_\-]?key|encryption[_\-]?key)\s*[:=]\s*["\']([A-Za-z0-9+/=_\-\.]{20,})["\']', re.IGNORECASE),

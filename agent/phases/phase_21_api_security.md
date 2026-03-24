@@ -285,22 +285,86 @@
           except Exception:
               continue
 
-  # Summary
-  print(f"\n=== API SECURITY SUMMARY: {len(api_findings)} issues found ===")
-  for f in api_findings:
-      sev = 'CRITICAL' if f['type'] in ('broken-auth-admin', 'api-docs-exposed') else 'HIGH'
-      print(f"  [{sev}] {f['type']}: {f.get('url','')} — {f.get('desc','')}")
-  if api_findings:
-      _G.setdefault('FINDINGS', []).extend([
-          {'severity': 'CRITICAL' if f['type'] in ('broken-auth-admin',) else 'HIGH',
-           'title': f"API Security — {f['type']}",
-           'url': f.get('url', ''),
-           'method': 'GET',
-           'evidence': f.get('evidence', ''),
-           'impact': 'Unauthorized API access, data leakage, admin endpoint exposure',
-           'screenshot': '',
-           'detail': f} for f in api_findings
-      ])
+  # ══════════════════════════════════════════════════════════════
+  # PART G — Automated BOLA/IDOR Testing (OWASP API1)
+  # ══════════════════════════════════════════════════════════════
+  if session_b:
+      print(f"\n[API] Automating BOLA/IDOR cross-session testing...")
+      # Identify all endpoints from Session A that have IDs
+      bola_targets = []
+      for path in API_ENUM_PATHS:
+          if re.search(r'/\d+', path) or any(p in path for p in ['id=', 'uuid=', 'uid=']):
+              bola_targets.append(path)
+      
+      for path in list(set(bola_targets))[:20]:
+          url = urljoin(BASE, path)
+          try:
+              # Get resource as Session A
+              r_a = session.get(url, timeout=5)
+              if r_a.status_code == 200:
+                  # Attempt to access with Session B
+                  r_b = session_b.get(url, timeout=5)
+                  if r_b.status_code == 200 and r_a.text == r_b.text:
+                      print(f"  [CRITICAL] BOLA/IDOR CONFIRMED: {url}")
+                      print(f"    Session B (unauthorized) accessed Session A's resource")
+                      api_findings.append({
+                          'url': url, 'type': 'bola-idor',
+                          'desc': 'Broken Object Level Authorization — cross-user data access confirmed',
+                          'evidence': r_b.text[:500]
+                      })
+          except Exception:
+              continue
+
+  # ══════════════════════════════════════════════════════════════
+  # PART H — Mass Assignment Testing (OWASP API6)
+  # ══════════════════════════════════════════════════════════════
+  print(f"\n[API] Testing Mass Assignment on writable endpoints...")
+  writable_ops = [ep for ep in accessible_apis if ep.get('method') in ('POST', 'PUT', 'PATCH')]
+  for ep in writable_ops[:5]:
+      url = ep['url']
+      payloads = [
+          {'is_admin': True}, {'role': 'admin'}, {'admin': 1},
+          {'privileges': 'ALL'}, {'access_level': 100}
+      ]
+      for p in payloads:
+          try:
+              r = session.request(ep['method'], url, json=p, timeout=5)
+              if r.status_code in (200, 201) and 'error' not in r.text.lower():
+                  print(f"  [MEDIUM] Potential Mass Assignment: {url} accepted {p}")
+                  api_findings.append({
+                      'url': url, 'type': 'mass-assignment',
+                      'desc': f"Endpoint accepted administrative field: {p}",
+                      'evidence': r.text[:300]
+                  })
+          except Exception:
+              continue
+
+  # ══════════════════════════════════════════════════════════════
+  # PART I — Aggressive API Endpoint Fuzzing
+  # ══════════════════════════════════════════════════════════════
+  print(f"\n[API] Fuzzing for hidden management/debug endpoints...")
+  FUZZ_WORDLIST = [
+      'debug', 'config', 'settings', 'admin', 'manage', 'health', 'metrics',
+      'env', 'dump', 'heapdump', 'logfile', 'audit', 'trace', 'monitoring',
+      'v1/debug', 'v1/config', 'v1/admin', 'v1/internal',
+      'v2/debug', 'v2/config', 'v2/admin', 'v2/internal',
+      'swagger-ui', 'api-spec', 'api-docs', 'api/v1', 'api/v2',
+      'api/internal', 'api/private', 'api/test', 'api/dev'
+  ]
+  for word in FUZZ_WORDLIST:
+      url = urljoin(BASE, f"/api/{word}")
+      time.sleep(0.1)
+      try:
+          r = session.get(url, timeout=5)
+          if r.status_code in (200, 201) and 'error' not in r.text.lower():
+              print(f"  [HIGH] Hidden API discovered: {url} (status {r.status_code})")
+              api_findings.append({
+                  'url': url, 'type': 'hidden-api-exposed',
+                  'desc': f'Unlinked API endpoint discovered via fuzzing: {word}',
+                  'evidence': r.text[:300]
+              })
+      except Exception:
+          continue
 
 # POST-PHASE SCREENSHOT CHECKPOINT — verify API findings with screenshots
 print("\n[SCREENSHOT CHECKPOINT] Verify all API security findings:")
