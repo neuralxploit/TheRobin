@@ -9,6 +9,7 @@ Tools are lazy-loaded on first call to avoid blocking startup.
 import json
 import sys
 import os
+import threading
 
 # Ensure TheRobin's root is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -20,6 +21,12 @@ mcp = FastMCP("robin-tools")
 # Lazy-loaded reference to agent.tools
 _tools_module = None
 _session_dir = None
+_session_lock = threading.Lock()
+
+# ── Input validation constants ────────────────────────────────────────────────
+_MAX_CODE_SIZE = 100_000       # 100KB max for run_python code
+_MAX_COMMAND_SIZE = 10_000     # 10KB max for bash commands
+_MAX_URL_SIZE = 4_096          # 4KB max for URLs
 
 
 def _get_tools():
@@ -33,17 +40,18 @@ def _get_tools():
 def _get_or_create_session_dir():
     """Get or create the current session directory (workspace/session_YYYYMMDD_HHMMSS/)."""
     global _session_dir
-    if _session_dir is None:
-        import datetime
-        tools = _get_tools()
-        # Create a timestamped session folder
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        _session_dir = tools.WORKSPACE_DIR / f"session_{ts}"
-        _session_dir.mkdir(parents=True, exist_ok=True)
-        # Update the tools module's WORKSPACE_DIR to point to this session
-        tools.WORKSPACE_DIR = _session_dir
-        print(f"[MCP] Session created: {_session_dir}", file=sys.stderr)
-    return _session_dir
+    with _session_lock:
+        if _session_dir is None:
+            import datetime
+            tools = _get_tools()
+            # Create a timestamped session folder
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            _session_dir = tools.WORKSPACE_DIR / f"session_{ts}"
+            _session_dir.mkdir(parents=True, exist_ok=True)
+            # Update the tools module's WORKSPACE_DIR to point to this session
+            tools.WORKSPACE_DIR = _session_dir
+            print(f"[MCP] Session created: {_session_dir}", file=sys.stderr)
+        return _session_dir
 
 
 # ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -55,6 +63,8 @@ def run_python(code: str) -> str:
     Already available: requests, BeautifulSoup, re, json, base64, hashlib,
     socket, ssl, time, urljoin, urlparse, urlencode, quote, unquote, parse_qs.
     Print findings with [CRITICAL]/[HIGH]/[MEDIUM]/[LOW]/[INFO] labels."""
+    if not isinstance(code, str) or len(code) > _MAX_CODE_SIZE:
+        return json.dumps({"error": f"Code must be a string under {_MAX_CODE_SIZE // 1000}KB"})
     _get_or_create_session_dir()  # Ensure session folder exists
     tools = _get_tools()
     return tools.execute_tool("run_python", {"code": code})
@@ -64,6 +74,8 @@ def run_python(code: str) -> str:
 def bash(command: str) -> str:
     """Execute a shell command. Use for nmap, curl, dig, whois, or other CLI tools.
     Prefer run_python for HTTP testing."""
+    if not isinstance(command, str) or len(command) > _MAX_COMMAND_SIZE:
+        return json.dumps({"error": f"Command must be a string under {_MAX_COMMAND_SIZE // 1000}KB"})
     _get_or_create_session_dir()
     tools = _get_tools()
     return tools.execute_tool("bash", {"command": command})
@@ -100,6 +112,10 @@ def web_request(
     """Quick HTTP request — returns status_code, headers, cookies, body (max 8KB),
     final url, and redirect_history. For multi-step flows use run_python instead.
     Pass headers/data/json_data/cookies as JSON strings."""
+    if not isinstance(url, str) or len(url) > _MAX_URL_SIZE:
+        return json.dumps({"error": f"URL must be a string under {_MAX_URL_SIZE} bytes"})
+    if not url.startswith(("http://", "https://")):
+        return json.dumps({"error": "URL must start with http:// or https://"})
     tools = _get_tools()
     args = {"url": url, "method": method, "verify_ssl": verify_ssl,
             "allow_redirects": allow_redirects, "timeout": timeout}
@@ -127,11 +143,11 @@ def browser_action(
     seconds: float = 0,
     timeout: int = 10,
 ) -> str:
-    """Control a persistent headless Chromium browser with VISION support.
+    """Control a persistent headless Chromium browser.
     Use for JS-heavy sites, SPA login forms, React/Angular/Vue apps.
     Actions: navigate, source, find_elements, fill, click, submit,
     wait_for, execute_js, cookies, screenshot, wait, close.
-    navigate/click/submit/screenshot return a screenshot you can SEE."""
+    Screenshots are saved to disk — use screenshot_file path to reference them."""
     _get_or_create_session_dir()
     tools = _get_tools()
     args = {"action": action}
@@ -196,7 +212,8 @@ json.dumps({
         try:
             repl_info = json.loads(result.get("stdout", "{}"))
         except json.JSONDecodeError:
-            repl_info = {"findings_count": 0, "base": "", "target": "", "has_session": False}
+            print(f"[MCP] Warning: Could not parse REPL state: {result.get('stdout', '')[:200]}", file=sys.stderr)
+            repl_info = {"findings_count": 0, "base": "", "target": "", "has_session": False, "_parse_error": True}
 
         return json.dumps({
             "session_dir": str(session_dir),
@@ -228,6 +245,11 @@ def start_new_session(target_url: str = "", session_name: str = "") -> str:
     global _session_dir
     import datetime
 
+    # Validate target URL if provided
+    if target_url:
+        if not target_url.startswith(("http://", "https://")):
+            return json.dumps({"error": "target_url must start with http:// or https://"})
+
     # Close browser and reset REPL from previous session if exists
     tools = _get_tools()
     try:
@@ -250,11 +272,12 @@ def start_new_session(target_url: str = "", session_name: str = "") -> str:
         # We're already inside a session, go up to workspace root
         base_workspace = tools.WORKSPACE_DIR.parent
 
-    _session_dir = base_workspace / f"session_{session_ts}"
-    _session_dir.mkdir(parents=True, exist_ok=True)
+    with _session_lock:
+        _session_dir = base_workspace / f"session_{session_ts}"
+        _session_dir.mkdir(parents=True, exist_ok=True)
 
-    # Update tools module's WORKSPACE_DIR to point to this session
-    tools.WORKSPACE_DIR = _session_dir
+        # Update tools module's WORKSPACE_DIR to point to this session
+        tools.WORKSPACE_DIR = _session_dir
 
     # Initialize session in the REPL _G dict
     init_code = f"""
@@ -328,6 +351,11 @@ def generate_report(output_filename: str = "report.pdf") -> str:
             "state_path": str(state_path),
             "session_dir": str(session_dir)
         })
+
+    # Sanitize filename — prevent path traversal
+    output_filename = os.path.basename(output_filename)
+    if not output_filename or output_filename.startswith('.'):
+        output_filename = "report.pdf"
 
     # Generate the report
     output_path = session_dir / output_filename

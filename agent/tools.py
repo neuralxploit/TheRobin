@@ -151,6 +151,7 @@ def _save_state():
     """Persist ALL serializable _G keys to disk so REPL restart recovers them."""
     try:
         state = {}
+        _set_keys = []  # Track which keys were originally sets
         for k, v in _G.items():
             if k.startswith('_') and k not in (
                 '_G',  # skip internal
@@ -165,14 +166,18 @@ def _save_state():
             if hasattr(v, '__module__') and not isinstance(v, (dict, list, tuple, str, int, float, bool, type(None))):
                 continue
             try:
-                # Convert sets to lists for JSON serialization
+                # Track sets so they can be restored properly
                 if isinstance(v, set):
+                    _set_keys.append(k)
                     v = list(v)
                 json.dumps(v)  # test serialization
                 state[k] = v
             except (TypeError, ValueError, OverflowError):
                 # Not serializable (sessions, sockets, compiled regex, etc.) — skip
                 continue
+        # Store type metadata so restore knows which keys were sets
+        if _set_keys:
+            state['__type_metadata__'] = {'set_keys': _set_keys}
         if state:
             with open(_STATE_FILE, 'w') as f:
                 json.dump(state, f)
@@ -185,11 +190,16 @@ def _restore_state():
         if os.path.exists(_STATE_FILE):
             with open(_STATE_FILE) as f:
                 state = json.load(f)
+            # Read type metadata to know which keys should be sets
+            type_meta = state.pop('__type_metadata__', {})
+            set_keys = set(type_meta.get('set_keys', []))
+            # Also keep hardcoded fallbacks for backward compatibility
+            set_keys.update({'ALL_LINKS', 'API_ENDPOINTS'})
             restored = []
             for k, v in state.items():
                 if k not in _G:  # don't overwrite if already set
-                    # Convert lists back to sets for known set-typed keys
-                    if k in ('ALL_LINKS', 'API_ENDPOINTS') and isinstance(v, list):
+                    # Convert lists back to sets using metadata
+                    if k in set_keys and isinstance(v, list):
                         _G[k] = set(v)
                     else:
                         _G[k] = v
@@ -264,6 +274,11 @@ while True:
             r'stored\s+\d+',            # "Stored 5 JWTs in _G"
             r'skipping',                # "skipping deep JWT testing"
             r'investigate manually',    # not confirmed findings
+            r'false\s+positive',        # lines about false positives
+            r'no\s+(issues?|vulns?|vulnerabilit)', # "no issues found"
+            r'all\s+clear',             # "all clear" status
+            r'result\s*:?\s*\d+',       # "result: 0 issues"
+            r'total\s*:?\s*\d+',        # "total: 5 endpoints tested"
         ]
 
         _stdout_lines = _stdout_text.split('\n')
@@ -779,6 +794,11 @@ window.onload=refresh;
         import base64, time
         ts = int(time.time())
 
+        # Sanitize label — strip path separators to prevent path traversal
+        label = os.path.basename(label)
+        if not label or label.startswith('.'):
+            label = f"screenshot_{ts}"
+
         # Check if label already ends with .png - if so, use it as-is (exact filename)
         if label.endswith('.png'):
             fname = label
@@ -787,6 +807,11 @@ window.onload=refresh;
             fname = f"screenshot_{label}_{ts}.png"
 
         path = WORKSPACE_DIR / fname
+        # Final safety check: ensure path is within WORKSPACE_DIR
+        if not str(path.resolve()).startswith(str(WORKSPACE_DIR.resolve())):
+            fname = f"screenshot_{ts}.png"
+            path = WORKSPACE_DIR / fname
+
         path.write_bytes(base64.b64decode(b64))
 
         # Update latest symlink / file for live viewer
@@ -823,7 +848,6 @@ window.onload=refresh;
                 "url": d.current_url,
                 "source_file": fname,
                 "bytes": len(src),
-                "screenshot_base64": b64,
                 "screenshot_file": shot_file,
                 "simplified_dom": self._strip_dom(src),
             }
@@ -877,7 +901,6 @@ window.onload=refresh;
             return {
                 "url": d.current_url,
                 "title": d.title,
-                "screenshot_base64": b64,
                 "screenshot_file": shot_file,
                 "simplified_dom": self._strip_dom(d.page_source),
             }
@@ -891,7 +914,6 @@ window.onload=refresh;
             return {
                 "url": d.current_url,
                 "title": d.title,
-                "screenshot_base64": b64,
                 "screenshot_file": shot_file,
                 "simplified_dom": self._strip_dom(d.page_source),
             }
@@ -925,7 +947,6 @@ window.onload=refresh;
             dom = self._strip_dom(d.page_source)
             return {
                 "saved": str(WORKSPACE_DIR / shot_file),
-                "screenshot_base64": b64,
                 "screenshot_file": shot_file,
                 "url": d.current_url,
                 "title": d.title,
@@ -1172,6 +1193,9 @@ def bash(command: str) -> dict:
 def write_file(path: str, content: str) -> dict:
     try:
         target = WORKSPACE_DIR / path
+        # Prevent path traversal — ensure target is within workspace
+        if not str(target.resolve()).startswith(str(WORKSPACE_DIR.resolve())):
+            return {"success": False, "error": f"Path traversal blocked: {path}"}
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         return {"success": True, "path": str(target), "bytes": len(content)}
@@ -1205,6 +1229,56 @@ def read_file(path: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+def _check_scope(url: str) -> str | None:
+    """Validate URL is within the authorized target scope.
+    Returns None if in-scope, or an error message if out-of-scope.
+    Reads BASE from the REPL state file if available."""
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return f"Invalid URL: {url}"
+
+        # Load target BASE from REPL state
+        state_file = WORKSPACE_DIR / ".pentest_state.json"
+        base_url = None
+        if state_file.exists():
+            try:
+                import json as _j
+                with open(state_file) as f:
+                    state = _j.load(f)
+                base_url = state.get("BASE", "")
+            except Exception:
+                pass
+
+        if not base_url:
+            # No BASE set yet — allow (recon phase hasn't started)
+            return None
+
+        target_host = urlparse(base_url).netloc.split(":")[0].lstrip("www.")
+        request_host = parsed.netloc.split(":")[0].lstrip("www.")
+
+        if not target_host:
+            return None  # No target configured yet
+
+        # Allow exact match or subdomain match
+        if request_host == target_host or request_host.endswith("." + target_host):
+            return None
+
+        # Allow localhost/127.0.0.1 variants (common in pentesting for callbacks)
+        local_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "[::]", "[::1]"}
+        if request_host in local_hosts:
+            return None
+
+        return (
+            f"[SCOPE VIOLATION] {request_host} is not in scope. "
+            f"Authorized target: {target_host} and its subdomains. "
+            f"If you need to test this URL, ask the user for authorization."
+        )
+    except Exception:
+        return None  # Don't block on parsing errors
+
+
 def web_request(
     url: str,
     method: str = "GET",
@@ -1216,6 +1290,11 @@ def web_request(
     allow_redirects: bool = True,
     timeout: int = 10,
 ) -> dict:
+    # Enforce scope — only test authorized target domain
+    scope_error = _check_scope(url)
+    if scope_error:
+        return {"error": scope_error}
+
     try:
         default_headers = {
             "User-Agent": (
@@ -1345,14 +1424,17 @@ TOOL_HANDLERS = {
 def execute_tool(name: str, args: dict) -> str:
     handler = TOOL_HANDLERS.get(name)
     if not handler:
-        return json.dumps({"error": f"Unknown tool: {name}"})
+        return json.dumps({"_error": True, "error": f"Unknown tool: {name}"})
     try:
         result = handler(**args)
+        # Mark error results so callers can distinguish success from failure
+        if isinstance(result, dict) and "error" in result and len(result) <= 3:
+            result["_error"] = True
         return json.dumps(result, indent=2, default=str)
     except TypeError as e:
-        return json.dumps({"error": f"Bad arguments: {e}"})
+        return json.dumps({"_error": True, "error": f"Bad arguments for {name}: {e}"})
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return json.dumps({"_error": True, "error": f"{name} failed: {e}"})
 
 
 # ─── Tool JSON Schemas ────────────────────────────────────────────────────────

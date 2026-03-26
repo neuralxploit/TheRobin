@@ -283,30 +283,23 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      # Store findings globally for report generation
      _G['JS_FINDINGS'] = js_findings
 
-      # Also store in main FINDINGS for PDF/ZDL report
-      _G.setdefault('FINDINGS', [])
-      for _jf in js_findings:
-          _G['FINDINGS'].append({
-              'severity': _jf.get('severity', 'HIGH'),
-              'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
-              'url': _jf.get('url', ''),
-              'method': 'GET',
-              'evidence': _jf.get('match', _jf.get('evidence', '')),
-              'impact': 'Exposed credentials or API keys in client-side JavaScript',
-              'screenshot': '',
-          })
+     # Also store in main FINDINGS for PDF/ZDL report
+     _G.setdefault('FINDINGS', [])
+     for _jf in js_findings:
+         _G['FINDINGS'].append({
+             'severity': _jf.get('severity', 'HIGH'),
+             'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
+             'url': _jf.get('url', ''),
+             'method': 'GET',
+             'evidence': _jf.get('match', _jf.get('evidence', '')),
+             'impact': 'Exposed credentials or API keys in client-side JavaScript',
+             'screenshot': '',
+         })
 
-      # POST-PHASE SCREENSHOT CHECKPOINT — verify JS secret findings with screenshots
-      print("\n[SCREENSHOT CHECKPOINT] Verify all JavaScript secret findings:")
-      for finding in _G['FINDINGS']:
-          if 'JS Secret' in finding.get('title', '') or 'Secret' in finding.get('title', ''):
-              if not finding.get('screenshot'):
-                  print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
-                  print(f"    Navigate to: {finding.get('url')}")
-                  print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
-                  print(f"    browser_action(action='screenshot', filename='phase_03b_js_secret_{finding.get('title').replace('JS Secret: ','').lower()[:40]}.png')")
-                  print(f"    Update finding['screenshot'] with the filename")
-      print("\n  For JS secret findings, verify by viewing the JavaScript file content in browser DevTools Sources tab. Screenshot should show the secret in context.")
+     # DO NOT use browser_action to navigate to raw .js files — they are not HTML
+     # pages and will return huge payloads that crash the model context.
+     # The scan output above already shows the full match, value, line, and context.
+     # That IS the proof. No screenshot needed for JS secret findings.
 
      # REPORT SUMMARY TO CONVERSATION (MANDATORY)
      js_critical = [f for f in js_findings if f['severity'] == 'CRITICAL']
@@ -319,17 +312,23 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      print(f"Total findings    : {len(js_findings)}")
 
      if js_critical or js_high:
-         print("\n[JAVASCRIPT SECURITY FINDINGS]")
-         for f in js_critical:
+         print("\n" + "="*70)
+         print("  JAVASCRIPT SECURITY FINDINGS — FULL DETAILS")
+         print("="*70)
+         for f in js_critical + js_high:
              filename = f['url'].split('/')[-1] if 'url' in f else 'unknown'
-             print(f"  [CRITICAL] {f['type']} in {filename}")
-             print(f"    Match: {f['match'][:80]}")
+             print(f"\n  [{f['severity']}] {f['type']} in {filename}")
+             print(f"    URL:     {f.get('url', 'N/A')}")
+             print(f"    Match:   {f['match'][:120]}")
+             if 'value' in f and f['value'] != f['match']:
+                 print(f"    Value:   {f['value'][:120]}")
              if 'line' in f:
-                 print(f"    Line: {f['line']}")
-         for f in js_high:
-             filename = f['url'].split('/')[-1] if 'url' in f else 'unknown'
-             print(f"  [HIGH] {f['type']} in {filename}")
-             print(f"    Match: {f['match'][:80]}")
+                 print(f"    Line:    {f['line']}")
+             if 'context' in f:
+                 print(f"    Context: {f['context'][:200]}")
+             if 'decoded' in f:
+                 print(f"    Decoded: {f['decoded'][:120]}")
+         print("\n" + "="*70)
      else:
          print("\n[INFO] No API keys, secrets, or hardcoded credentials found in JavaScript files.")
      ```

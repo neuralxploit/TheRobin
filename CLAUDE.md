@@ -56,11 +56,37 @@ base64, hashlib, socket, ssl, time, urljoin, urlparse, urlencode, quote, unquote
 
 ## Starting Claude Code (Skip Permission Prompts)
 
-Claude Code asks for permission before every tool call by default. For a pentest this gets in the way — use the `--dangerously-skip-permissions` flag so it runs without interruption:
+### Option A — Interactive Phase Selector (recommended)
+
+Use `pentest.sh` to pick phases from a visual checklist before Claude starts:
+
+```bash
+cd TheRobin
+./pentest.sh http://target.com
+./pentest.sh http://target.com admin/pass
+./pentest.sh http://target.com --cookie "session=abc"
+```
+
+A `whiptail` checkbox UI appears — SPACE to toggle phases, ENTER to confirm.
+Claude launches automatically with only the selected phases.
+
+### Option B — Direct Claude Code
 
 ```bash
 cd TheRobin
 claude --dangerously-skip-permissions
+```
+
+Then type: `pentest http://target.com` — Claude will show the numbered phase list and ask for your selection.
+
+### Option C — Pre-select phases via flag
+
+Pass `--phases` to skip the interactive prompt:
+
+```bash
+pentest http://target.com --phases "1-5,8,21"
+pentest http://target.com admin/pass --phases "1,6,7,8,21,24"
+pentest http://target.com --phases "all"
 ```
 
 Or set it permanently in `~/.claude/settings.json` for this project:
@@ -101,15 +127,21 @@ The user will give you a target in one of these forms — parse accordingly:
 | `pentest http://target.com admin/pass` | BASE=..., creds_a={username:admin, password:pass} |
 | `pentest http://target.com --cookie "session=abc; token=xyz"` | BASE=..., COOKIE=session=abc; token=xyz (skip login phase, use cookie on all requests) |
 | `pentest http://target.com admin/pass --cookie "..."` | BASE=..., creds_a=..., COOKIE=... |
+| `pentest http://target.com --phases "1-5,8,21"` | Run only selected phases (skip phase prompt) |
+| `pentest http://target.com --phases "all"` | Run all phases autonomously without stopping |
 
 **Cookie auth:** When `--cookie` is provided, store it in `_G['COOKIE']` and attach it as the `Cookie:` header on every HTTP request. Skip the login brute-force part of Phase 3 (the user is already authenticated). Still run all other phases using the provided cookie.
 
+**Phase selection:** When `--phases` is provided, parse it into a list and store in `_G['SELECTED_PHASES']`. Skip the interactive phase prompt. Supported formats: `"all"`, `"1-10"`, `"1,3,8"`, `"1-5,12,21"`.
+
 Store everything in `_G` before starting:
 ```python
-_G['BASE']    = 'http://target.com'
-_G['COOKIE']  = 'session=abc123; token=xyz'   # if provided
-_G['creds_a'] = {'username': 'admin', 'password': 'pass'}  # if provided
-_G['creds_b'] = None  # second account for IDOR — requested in Phase 21
+_G['BASE']             = 'http://target.com'
+_G['COOKIE']           = 'session=abc123; token=xyz'   # if provided
+_G['creds_a']          = {'username': 'admin', 'password': 'pass'}  # if provided
+_G['creds_b']          = None  # second account for IDOR — requested in Phase 21
+_G['SELECTED_PHASES']  = [1,2,3,4,5]   # list of ints — set after phase selection
+_G['AUTONOMOUS']       = False          # True = run all without stopping
 ```
 
 1. **Read the initialization guide first:**
@@ -160,11 +192,11 @@ _G['creds_b'] = None  # second account for IDOR — requested in Phase 21
 | `agent/phases/phase_17_idor.md` | Phase 21 — IDOR / Access Control |
 | `agent/phases/phase_19_business_logic.md` | Phase 22 — Business Logic |
 | `agent/phases/phase_20_xxe_pathtraversal.md` | Phase 23 — XXE & Path Traversal |
-| `agent/phases/phase_21_api_security.md` | Phase 24 — API Security |
+| `agent/phases/phase_21_api_security.md` | Phase 24 — API Security, Info Disclosure & Git Reconstruction |
 | `agent/phases/phase_22_race_conditions.md` | Phase 25 — Race Conditions |
-| `agent/phases/phase_23_sensitive_files.md` | Phase 26 — Sensitive Files |
-| `agent/phases/phase_24_account_security.md` | Phase 27 — Account Security |
-| `agent/phases/phase_25_error_handling.md` | Phase 28 — Error Handling |
+| `agent/phases/phase_23_sensitive_files.md` | Phase 26 — Sensitive Files & Directories |
+| `agent/phases/phase_24_account_security.md` | Phase 27 — Account Security & Enumeration |
+| `agent/phases/phase_25_error_handling.md` | Phase 28 — Error Handling & Info Disclosure |
 | `agent/phases/phase_18_report.md` | Phase 29 — Final Report |
 
 ---

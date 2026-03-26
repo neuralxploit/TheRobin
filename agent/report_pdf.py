@@ -834,9 +834,10 @@ def _llm_normalize_title(raw_title: str) -> str:
                     return title
 
         # Fallback: try Ollama if running locally
-        import urllib.request, json as _json
+        import os, urllib.request, json as _json
+        _ollama_base = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
         req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
+            f"{_ollama_base}/api/generate",
             data=_json.dumps({
                 "model": "llama3.2",
                 "prompt": prompt,
