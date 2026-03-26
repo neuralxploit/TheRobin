@@ -99,10 +99,22 @@ _G["_G"] = _G  # so exec'd code can reference the persistent namespace
 
 # Helper so LLM can call write_file()/read_file() inside run_python code
 def _repl_write_file(fname, content):
-    p = Path(fname)
+    # Strip redundant workspace/session prefixes to avoid nested dirs.
+    # CWD is already the session dir, so "session_xxx/plan.md" would nest.
+    clean = fname
+    cwd_name = Path.cwd().name
+    if clean.startswith("workspace/"):
+        clean = clean[len("workspace/"):]
+    if cwd_name and cwd_name.startswith("session_") and clean.startswith(cwd_name + "/"):
+        clean = clean[len(cwd_name) + 1:]
+    if clean.startswith("workspace/"):
+        clean = clean[len("workspace/"):]
+    if cwd_name and cwd_name.startswith("session_") and clean.startswith(cwd_name + "/"):
+        clean = clean[len(cwd_name) + 1:]
+    p = Path(clean)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
-    print(f"[OK] Saved: {fname} ({len(content)} bytes)")
+    print(f"[OK] Saved: {clean} ({len(content)} bytes)")
 
 def _repl_read_file(fname):
     return Path(fname).read_text()
@@ -1192,7 +1204,24 @@ def bash(command: str) -> dict:
 
 def write_file(path: str, content: str) -> dict:
     try:
-        target = WORKSPACE_DIR / path
+        # Strip redundant prefixes that would create nested dirs.
+        # e.g. if WORKSPACE_DIR is workspace/session_xxx/ and path is
+        # "session_xxx/plan.md" or "workspace/session_xxx/plan.md", collapse it.
+        clean = path
+        ws_name = WORKSPACE_DIR.name  # e.g. "session_20260326_112806"
+        # Strip leading "workspace/" prefix
+        if clean.startswith("workspace/"):
+            clean = clean[len("workspace/"):]
+        # Strip leading session dir name prefix (avoids nesting session inside session)
+        if ws_name and clean.startswith(ws_name + "/"):
+            clean = clean[len(ws_name) + 1:]
+        # Strip again in case both were present: "workspace/session_xxx/file"
+        if clean.startswith("workspace/"):
+            clean = clean[len("workspace/"):]
+        if ws_name and clean.startswith(ws_name + "/"):
+            clean = clean[len(ws_name) + 1:]
+
+        target = WORKSPACE_DIR / clean
         # Prevent path traversal — ensure target is within workspace
         if not str(target.resolve()).startswith(str(WORKSPACE_DIR.resolve())):
             return {"success": False, "error": f"Path traversal blocked: {path}"}

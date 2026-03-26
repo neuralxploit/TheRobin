@@ -37,6 +37,17 @@ def _get_tools():
     return _tools_module
 
 
+def _get_workspace_root():
+    """Walk up from tools.WORKSPACE_DIR to find the real workspace/ root,
+    in case WORKSPACE_DIR already points inside a session folder."""
+    tools = _get_tools()
+    base = tools.WORKSPACE_DIR
+    # Walk up while we're inside a session_* directory
+    while base.name.startswith("session_") and base.parent.name != base.name:
+        base = base.parent
+    return base
+
+
 def _get_or_create_session_dir():
     """Get or create the current session directory (workspace/session_YYYYMMDD_HHMMSS/)."""
     global _session_dir
@@ -44,9 +55,10 @@ def _get_or_create_session_dir():
         if _session_dir is None:
             import datetime
             tools = _get_tools()
+            base_workspace = _get_workspace_root()
             # Create a timestamped session folder
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            _session_dir = tools.WORKSPACE_DIR / f"session_{ts}"
+            _session_dir = base_workspace / f"session_{ts}"
             _session_dir.mkdir(parents=True, exist_ok=True)
             # Update the tools module's WORKSPACE_DIR to point to this session
             tools.WORKSPACE_DIR = _session_dir
@@ -266,11 +278,8 @@ def start_new_session(target_url: str = "", session_name: str = "") -> str:
     else:
         session_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Create session folder under workspace/
-    base_workspace = tools.WORKSPACE_DIR
-    if "session_" in str(base_workspace):
-        # We're already inside a session, go up to workspace root
-        base_workspace = tools.WORKSPACE_DIR.parent
+    # Create session folder under workspace/ root (not inside an existing session)
+    base_workspace = _get_workspace_root()
 
     with _session_lock:
         _session_dir = base_workspace / f"session_{session_ts}"
