@@ -15,13 +15,15 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ollama](https://img.shields.io/badge/LLM-Ollama-orange.svg)](https://ollama.com)
+[![LM Studio](https://img.shields.io/badge/LLM-LM%20Studio-purple.svg)](https://lmstudio.ai)
+[![Claude](https://img.shields.io/badge/LLM-Claude%20API-blueviolet.svg)](https://console.anthropic.com)
 [![OWASP](https://img.shields.io/badge/OWASP-Top%2010-red.svg)](https://owasp.org/www-project-top-ten/)
 
 **Autonomous AI-driven penetration testing framework powered by LLMs.**
 <br>
-TheRobin executes a full 29-phase web application security assessment autonomously —
+TheRobin executes a full 33-phase web application security assessment with mandatory exploitation escalation —
 <br>
-from reconnaissance to report generation — using an AI agent that writes, executes, and iterates on its own attack code.
+from reconnaissance to full exploitation to report generation — using an AI agent that writes, executes, and iterates on its own attack code.
 
 [Getting Started](#installation) · [Usage](#usage) · [Test Lab](#-vulnerable-test-app) · [Tor Mode](#-tor--anonymity-support) · [Architecture](#architecture)
 
@@ -31,18 +33,20 @@ from reconnaissance to report generation — using an AI agent that writes, exec
 
 ## Overview
 
-TheRobin is an offensive security tool that uses Large Language Models via [Ollama](https://ollama.com) to conduct autonomous penetration tests against web applications. Unlike traditional scanners that rely on signature matching, TheRobin's AI agent **reasons about responses**, **adapts its attack strategy**, and **confirms vulnerabilities** before reporting them.
+TheRobin is an offensive security tool that uses Large Language Models via [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), or the [Anthropic API](https://console.anthropic.com) to conduct autonomous penetration tests against web applications. Unlike traditional scanners that rely on signature matching, TheRobin's AI agent **reasons about responses**, **adapts its attack strategy**, **exploits confirmed vulnerabilities to maximum depth**, and **chains findings** before reporting them.
 
-The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 29-phase methodology but adapts dynamically based on what it discovers.
+The agent operates through a persistent Python REPL — writing and executing code in real-time, chaining system tools (nmap, sqlmap, gobuster), and maintaining full session state across hundreds of interactions. It follows a structured 33-phase methodology with mandatory exploitation escalation — when a vulnerability is found, the agent doesn't just log it, it proves maximum impact through data extraction, privilege escalation, and attack chaining.
 
 ### Key Capabilities
 
 | | Capability | Details |
 |---|---|---|
 | 🤖 | **Autonomous Agent** | AI writes & executes attack code in a persistent REPL — no manual scripting needed |
-| 👁️ | **Browser Vision** | Headless Chromium with screenshot analysis — the AI *sees* pages, confirms findings visually, and handles JS-heavy apps |
+| 💥 | **Exploitation Escalation** | Mandatory deep exploitation — SQLi leads to data dumps, CMDi to system enum, SSRF to cloud credential theft |
+| 🔗 | **Vulnerability Chaining** | Auto-detects and chains findings (SQLi+write=RCE, SSRF+metadata=takeover, XSS+no-HttpOnly=hijack) |
+| 👁️ | **Browser Vision** | Headless Chromium with screenshot analysis — the AI *sees* pages, confirms findings visually, handles JS-heavy apps |
 | 🔍 | **OSINT Recon** | Subdomain enumeration (crt.sh), DNS, WHOIS, Wayback Machine, DuckDuckGo dorking |
-| 🌐 | **Full Web Testing** | SQLi, XSS, CSRF, IDOR, SSRF, CRLF, command injection, deserialization, and more |
+| 🌐 | **Full Web Testing** | SQLi, XSS, CSRF, IDOR, SSRF, SSTI, CMDi, WebSocket, OAuth/SSO, cache poisoning, mass assignment, and more |
 | 🔐 | **2FA / Cookie Auth** | Paste a session cookie for targets with complex authentication |
 | 🧅 | **Tor Routing** | Route all agent traffic through Tor with one flag |
 | 📊 | **Professional Reports** | PDF, HTML, JSON, and XML reports with CVSS v3.1, ZDL risk matrix, OWASP classification, reproducible curl PoCs, and remediation |
@@ -51,13 +55,13 @@ The agent operates through a persistent Python REPL — writing and executing co
 
 ### Privacy Notice
 
-TheRobin works with both **local models** (data never leaves your machine) and **cloud-proxied models** via Ollama (`:cloud` suffix — data is sent to the model provider). Choose based on your operational security requirements.
+TheRobin works with **local models** via Ollama or LM Studio (data never leaves your machine), **cloud-proxied models** via Ollama (`:cloud` suffix), or **Claude API** (data sent to Anthropic). Choose based on your operational security requirements.
 
 ---
 
 ## Testing Methodology
 
-TheRobin follows a structured 29-phase approach — each vulnerability type gets its own dedicated phase:
+TheRobin follows a structured 33-phase approach with mandatory exploitation escalation — each vulnerability type gets its own dedicated phase, and every confirmed finding is exploited to maximum depth:
 
 ```
  Phase  1 │ Recon & Crawl          → Unauthenticated spider, tech stack, directory bruteforce
@@ -83,28 +87,36 @@ TheRobin follows a structured 29-phase approach — each vulnerability type gets
  Phase 21 │ IDOR                   → Cross-user access control (2-account)
  Phase 22 │ Business Logic         → Price tampering, workflow bypass, rate limiting
  Phase 23 │ XXE & Path Traversal   → XML external entities, LFI/directory traversal
- Phase 24 │ API Security           → Endpoint enumeration, auth bypass, mass assignment
+ Phase 24 │ API Security           → Endpoint enumeration, auth bypass, info disclosure
  Phase 25 │ Race Conditions        → TOCTOU, concurrent request exploitation
  Phase 26 │ Sensitive Files        → Config files, backup files, exposed directories
  Phase 27 │ Account Security       → Account enumeration, password policy, lockout testing
  Phase 28 │ Error Handling         → Error disclosure, stack traces, debug information
- Phase 29 │ Reporting              → Aggregated findings, curl PoCs, CVSS, PDF report
+ Phase 29 │ WebSocket Security     → CSWSH, auth bypass, injection via WS, channel hijacking
+ Phase 30 │ OAuth / SSO Abuse      → redirect_uri manipulation, PKCE bypass, SAML attacks
+ Phase 31 │ Mass Assignment        → Parameter injection, HTTP param pollution, prototype pollution
+ Phase 32 │ Cache Poisoning        → Unkeyed header injection, web cache deception, request smuggling
+ Phase 33 │ Reporting              → Aggregated findings, curl PoCs, CVSS, PDF report
+   ─────────────────────────────────────────────────────────────────────────────
+   AUTO  │ Exploitation Escalation → Runs after EVERY confirmed vuln — SQLi data extraction,
+         │                           CMDi system enum, SSTI RCE chains, SSRF cloud metadata theft,
+         │                           IDOR mass extraction, file upload webshells, vuln chaining
 ```
 
-Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands.
+Each finding is **confirmed before reporting** — the agent parses response bodies, checks actual behavior, and provides reproducible proof-of-concept commands. When a vulnerability is confirmed, the agent **must escalate exploitation** (minimum 3 steps) to prove maximum impact — SQLi leads to data dumps, command injection leads to system enumeration, SSRF leads to cloud credential theft. The agent also **chains findings** automatically (e.g., SQLi + file write = RCE).
 
 ### Screenshot-Verified Reporting
 
 Every vulnerability finding goes through a strict evidence pipeline before it reaches the final report:
 
 ```
- Discovery → Confirmation → Screenshot Verification → Report Entry
-     ↓             ↓                  ↓                     ↓
-  Detect via    Re-test to       Open in browser,      Include all 4:
-  requests/     confirm real      take screenshot,      test script,
-  scanning      behavior          AI analyzes image     server response,
-                                                        screenshot proof,
-                                                        working curl PoC
+ Discovery → Confirmation → Exploitation Escalation → Screenshot Verification → Report Entry
+     ↓             ↓                  ↓                        ↓                     ↓
+  Detect via    Re-test to       Escalate to max         Open in browser,      Include all:
+  requests/     confirm real      impact: extract         take screenshot,      test script,
+  scanning      behavior          data, enum system,      AI analyzes image     server response,
+                                  prove RCE, chain                              screenshot proof,
+                                  with other vulns                              working curl PoC
 ```
 
 **What every finding includes:**
@@ -137,8 +149,8 @@ All four formats contain identical data: professional finding titles, CVSS v3.1 
 | Requirement | Details |
 |-------------|---------|
 | **Python** | 3.10 or higher |
-| **Ollama** | Running locally — [install here](https://ollama.com) |
-| **OS** | Linux (tested on Ubuntu/Debian) — macOS may work |
+| **LLM Backend** | One of: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), or [Anthropic API key](https://console.anthropic.com) |
+| **OS** | Linux (tested on Ubuntu/Debian), macOS, Windows (with `setup.ps1`) |
 | **Optional** | `chromium` for browser vision / screenshot verification (`sudo snap install chromium`) |
 | **Optional** | `nmap`, `nikto`, `gobuster`, `sqlmap` for extended scanning |
 | **Optional** | `tor` for anonymous traffic routing |
@@ -242,12 +254,23 @@ pentest http://target.com admin/password123
 
 OpenCode will act as the full pentest agent — it loads the phase guides, writes and runs test code via its built-in execution tools, tracks all findings, and generates the final PDF report.
 
-| | TheRobin Loop (Options A/B) | Claude Code (Option C) | OpenCode (Option D) |
+### Option E: LM Studio (Local / Free)
+
+Run any GGUF model locally through LM Studio's OpenAI-compatible API:
+
+```bash
+# Start LM Studio, load a model, then:
+./run.sh -t https://target.com -m lmstudio:qwen2.5-coder-32b
+```
+
+Set `LMSTUDIO_BASE` to point to a remote instance: `export LMSTUDIO_BASE=http://192.168.1.100:1234`
+
+| | TheRobin Loop (Options A/B/E) | Claude Code (Option C) | OpenCode (Option D) |
 |---|---|---|---|
-| **Model** | Ollama / Anthropic API | Claude Code subscription | OpenCode (free models available) |
+| **Model** | Ollama / LM Studio / Anthropic API | Claude Code subscription | OpenCode (free models available) |
 | **Setup** | `bash setup.sh` + model pull | `npm install -g @anthropic-ai/claude-code` | `curl -fsSL https://opencode.ai/install | bash` |
 | **Interaction** | Autonomous — watch it run | Conversational — ask questions mid-test | Conversational — TUI/Build modes |
-| **Phases** | Full 29-phase auto-run | Full 29-phase, you can steer | Full 29-phase, you can steer |
+| **Phases** | Full 33-phase auto-run | Full 33-phase, you can steer | Full 33-phase, you can steer |
 | **Report** | Auto-generated at end | Ask "generate the report" anytime | Ask "generate the report" anytime |
 
 <details>
@@ -263,7 +286,7 @@ OpenCode will act as the full pentest agent — it loads the phase guides, write
 **Ollama Cloud-proxied** (via Ollama infrastructure — data sent to provider):
 | Model | Vision | Notes |
 |-------|--------|-------|
-| `glm-4.7:cloud` | ❌ | **Recommended for Ollama** — 128K context, best tool calling, follows all 29 phases reliably |
+| `glm-4.7:cloud` | ❌ | **Recommended for Ollama** — 128K context, best tool calling, follows all 33 phases reliably |
 | `glm-5:cloud` | ❌ | Coding-specialized, strong tool calling |
 | `kimi-k2.5:cloud` | ✅ | Vision + tools, but poor phase adherence — not recommended |
 | `kimi-k2:1t-cloud` | ❌ | Strong reasoning, large context |
@@ -410,35 +433,55 @@ Or toggle at runtime: `/set TOR on`
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        main.py (CLI)                        │
-├─────────────────────────────────────────────────────────────┤
-│                    app.py (Session Manager)                  │
-├──────────────────────────┬──────────────────────────────────┤
-│   agent/loop.py          │        ui/console.py             │
-│   (Agentic Loop)         │        (Rich TUI)                │
-├──────────────────────────┴──────────────────────────────────┤
-│                      agent/tools.py                         │
-│  ┌──────────┐ ┌──────┐ ┌───────────┐ ┌─────────┐ ┌──────┐  │
-│  │run_python│ │ bash │ │web_request│ │read_file│ │write │  │
-│  │  (REPL)  │ │      │ │           │ │         │ │_file │  │
-│  └──────────┘ └──────┘ └───────────┘ └─────────┘ └──────┘  │
-├─────────────────────────────────────────────────────────────┤
-│  agent/prompts.py    │  agent/ollama.py  │  agent/osint.py  │
-│  (Lean roadmap +     │  (Ollama HTTP     │  (crt.sh, DNS,   │
-│   on-demand phases)  │   client)         │   WHOIS, Wayback)│
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         main.py (CLI)                            │
+│                  --targets-file / -T batch mode                  │
+├──────────────────────────────────────────────────────────────────┤
+│                     app.py (Session Manager)                     │
+├───────────────────────────┬──────────────────────────────────────┤
+│   agent/loop.py           │         ui/console.py                │
+│   (Agentic Loop)          │         (Rich TUI)                   │
+├───────────────────────────┴──────────────────────────────────────┤
+│                       agent/tools.py (12 tools)                  │
+│  ┌──────────┐ ┌──────┐ ┌───────────┐ ┌────────────┐ ┌────────┐  │
+│  │run_python│ │ bash │ │web_request│ │browser_    │ │osint_  │  │
+│  │  (REPL)  │ │      │ │           │ │action      │ │recon   │  │
+│  └──────────┘ └──────┘ └───────────┘ └────────────┘ └────────┘  │
+│  ┌──────────┐ ┌──────┐ ┌───────────┐ ┌────────────┐ ┌────────┐  │
+│  │read_file │ │write │ │start_new_ │ │generate_   │ │compact │  │
+│  │          │ │_file │ │session    │ │report      │ │_state  │  │
+│  └──────────┘ └──────┘ └───────────┘ └────────────┘ └────────┘  │
+│  ┌──────────────────┐ ┌────────────────────────────┐             │
+│  │get_session_info  │ │restore_state_from_json     │             │
+│  └──────────────────┘ └────────────────────────────┘             │
+├──────────────────────────────────────────────────────────────────┤
+│  agent/prompts.py  │ agent/ollama.py │ agent/lmstudio.py        │
+│  (33-phase roadmap │ (Ollama HTTP    │ (LM Studio OpenAI-       │
+│   + on-demand      │  client)        │  compatible client)       │
+│   phase guides)    │                 │                           │
+├────────────────────┼─────────────────┼───────────────────────────┤
+│  agent/osint.py    │ agent/claude_api.py │ mcp_server.py         │
+│  (crt.sh, DNS,     │ (Anthropic API      │ (MCP bridge for       │
+│   WHOIS, Wayback)  │  client)            │  Claude Code)         │
+├──────────────────────────────────────────────────────────────────┤
+│                    agent/phases/ (34 phase guides)               │
+│  33 detection/testing phases + exploitation escalation engine    │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 | File | Purpose |
 |------|---------|
-| `main.py` | CLI entry point — argument parsing |
+| `main.py` | CLI entry point — argument parsing, `--targets-file` batch mode |
 | `app.py` | Session management, command handling, option configuration |
 | `agent/loop.py` | Agentic loop — LLM ↔ tool execution cycle with context compaction |
-| `agent/tools.py` | Tool implementations (REPL, bash, HTTP, file I/O) + JSON schemas |
+| `agent/tools.py` | 12 tool implementations (REPL, bash, HTTP, browser, OSINT, session mgmt, reporting) + JSON schemas |
 | `agent/prompts.py` | Lean system prompt — rules + phase roadmap (full code loaded on-demand from `agent/phases/`) |
 | `agent/ollama.py` | Ollama HTTP client (stdlib `urllib`, zero external deps) |
+| `agent/lmstudio.py` | LM Studio OpenAI-compatible client with streaming support |
+| `agent/claude_api.py` | Anthropic Claude API client with tool calling |
 | `agent/osint.py` | OSINT modules — crt.sh subdomains, DNS, WHOIS, Wayback, DuckDuckGo dorking |
+| `mcp_server.py` | MCP server — exposes all 12 tools to Claude Code / OpenCode |
+| `agent/phases/` | 34 phase guide files — 33 testing phases + exploitation escalation engine |
 | `ui/console.py` | Rich-based terminal UI — panels, tool output blocks, status indicators |
 
 ---
