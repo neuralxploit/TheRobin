@@ -1364,7 +1364,7 @@ def web_request(
     cookies: dict = None,
     verify_ssl: bool = False,
     allow_redirects: bool = True,
-    timeout: int = 10,
+    timeout: int = 30,
 ) -> dict:
     # Enforce scope — only test authorized target domain
     scope_error = _check_scope(url)
@@ -1484,6 +1484,224 @@ def osint_recon(action: str, target: str = "", query: str = "", max_results: int
         }
 
 
+# ─── Session Management Tools ────────────────────────────────────────────────
+# These mirror the MCP-only tools so the Ollama/LM Studio agent loop has parity.
+
+def get_session_info() -> dict:
+    """Get current session information: directory, target URL, findings count."""
+    import datetime as _dt
+    session_dir = WORKSPACE_DIR
+
+    # Try to read session metadata
+    metadata_path = session_dir / "session_metadata.json"
+    metadata = {}
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text())
+        except Exception:
+            pass
+
+    # Get current findings count from REPL
+    result = execute_tool("run_python", {"code": """
+import json as _j
+print(_j.dumps({
+    "findings_count": len(_G.get('FINDINGS', [])),
+    "base": _G.get('BASE', ''),
+    "target": _G.get('TARGET', ''),
+    "has_session": 'SESSION_DIR' in _G
+}))
+"""})
+
+    try:
+        repl_info = json.loads(json.loads(result).get("stdout", "{}"))
+    except (json.JSONDecodeError, TypeError):
+        repl_info = {"findings_count": 0, "base": "", "target": "", "has_session": False}
+
+    return {
+        "session_dir": str(session_dir),
+        "session_name": session_dir.name,
+        "target": repl_info.get("target") or metadata.get("target", ""),
+        "base_url": repl_info.get("base", ""),
+        "findings_count": repl_info.get("findings_count", 0),
+        "created": metadata.get("timestamp", "unknown"),
+        "has_session": repl_info.get("has_session", False),
+    }
+
+
+def start_new_session(target_url: str = "", session_name: str = "") -> dict:
+    """Start a new pentest session with its own isolated workspace folder."""
+    global WORKSPACE_DIR
+    import datetime as _dt
+
+    if target_url and not target_url.startswith(("http://", "https://")):
+        return {"error": "target_url must start with http:// or https://"}
+
+    # Close browser and reset REPL from previous session
+    try:
+        reset_browser()
+        reset_repl()
+    except Exception:
+        pass
+
+    # Create new session directory
+    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    if session_name:
+        clean_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in session_name)
+        folder_name = f"session_{clean_name}_{ts}"
+    else:
+        folder_name = f"session_{ts}"
+
+    # Walk up to workspace root if currently inside a session folder
+    base_workspace = WORKSPACE_DIR
+    while base_workspace.name.startswith("session_") and base_workspace.parent.name != base_workspace.name:
+        base_workspace = base_workspace.parent
+
+    new_dir = base_workspace / folder_name
+    new_dir.mkdir(parents=True, exist_ok=True)
+    WORKSPACE_DIR = new_dir
+
+    # Initialize session in the REPL
+    init_code = f"""
+import json, os
+BASE = "{target_url}"
+_G['BASE'] = "{target_url}"
+_G['SESSION_DIR'] = r"{new_dir}"
+_G['FINDINGS'] = []
+_G['TARGET'] = "{target_url}"
+_G['TIMESTAMP'] = "{_dt.datetime.now().isoformat()}"
+print(f"[NEW SESSION] Workspace: {new_dir}")
+print(f"[NEW SESSION] Target: {target_url}")
+"""
+    execute_tool("run_python", {"code": init_code})
+
+    # Save session metadata
+    metadata = {
+        "target": target_url,
+        "session_name": session_name or folder_name,
+        "timestamp": _dt.datetime.now().isoformat(),
+        "session_dir": str(new_dir),
+    }
+    (new_dir / "session_metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    return {
+        "success": True,
+        "session_dir": str(new_dir),
+        "target_url": target_url,
+        "session_name": session_name or folder_name,
+        "message": f"New session started: {new_dir.name}",
+    }
+
+
+def generate_report(output_filename: str = "report.pdf") -> dict:
+    """Generate the final PDF penetration test report from the current session findings."""
+    session_dir = WORKSPACE_DIR
+
+    try:
+        from agent.report_pdf import generate_pdf_report
+    except ImportError as e:
+        return {"error": f"Failed to import report generator: {e}", "session_dir": str(session_dir)}
+
+    # Save current _G state
+    execute_tool("run_python", {"code": "_save_state()"})
+
+    state_path = WORKSPACE_DIR / ".pentest_state.json"
+    if not state_path.exists():
+        return {"error": "No _G state found. Run analysis code first.", "session_dir": str(session_dir)}
+
+    try:
+        with open(state_path) as f:
+            g_state = json.load(f)
+    except Exception as e:
+        return {"error": f"Failed to read _G state: {e}", "session_dir": str(session_dir)}
+
+    # Sanitize filename
+    output_filename = os.path.basename(output_filename)
+    if not output_filename or output_filename.startswith('.'):
+        output_filename = "report.pdf"
+
+    output_path = session_dir / output_filename
+
+    try:
+        pdf_path = generate_pdf_report(g=g_state, output_path=str(output_path), session_dir=str(session_dir))
+    except Exception as e:
+        import traceback
+        return {"error": f"Failed to generate report: {e}", "traceback": traceback.format_exc(),
+                "session_dir": str(session_dir)}
+
+    return {
+        "success": True,
+        "pdf_path": pdf_path,
+        "session_dir": str(session_dir),
+        "findings_count": len(g_state.get("FINDINGS", [])),
+        "message": f"Report generated: {pdf_path}",
+    }
+
+
+def restore_state_from_json() -> dict:
+    """Restore ALL session state from .pentest_state.json."""
+    session_dir = WORKSPACE_DIR
+    state_path = session_dir / ".pentest_state.json"
+
+    if not state_path.exists():
+        return {"error": "No state file found. Was compact_state called?", "session_dir": str(session_dir)}
+
+    try:
+        with open(state_path) as f:
+            state_data = json.load(f)
+    except Exception as e:
+        return {"error": f"Failed to read state file: {e}", "session_dir": str(session_dir)}
+
+    restore_code = f"""
+import json, os
+with open(r'{state_path}') as f:
+    saved_state = json.load(f)
+restored_count = 0
+for key, value in saved_state.items():
+    _G[key] = value
+    restored_count += 1
+print(f"[RESTORE] Restored {{restored_count}} keys from .pentest_state.json")
+print(f"[RESTORE] BASE={{_G.get('BASE', '')}}, FINDINGS count={{len(_G.get('FINDINGS', []))}}")
+"""
+    result = execute_tool("run_python", {"code": restore_code})
+
+    return {
+        "success": True,
+        "session_dir": str(session_dir),
+        "state_file": str(state_path),
+        "keys_restored": len(state_data),
+        "findings_count": len(state_data.get("FINDINGS", [])),
+        "base": state_data.get("BASE", ""),
+        "output": json.loads(result).get("stdout", "") if isinstance(result, str) else "",
+        "message": f"Restored {len(state_data)} keys from .pentest_state.json",
+    }
+
+
+def compact_state(summary: str) -> dict:
+    """Checkpoint progress — save summary + complete _G state to disk."""
+    import datetime as _dt
+    session_dir = WORKSPACE_DIR
+
+    memory_path = session_dir / "pentest_memory.md"
+    timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    content = f"# Pentest Memory — Auto-Compacted\nUpdated: {timestamp}\n\n{summary}"
+
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
+    memory_path.write_text(content)
+
+    # Also save _G state via the REPL
+    execute_tool("run_python", {"code": "_save_state()"})
+
+    return {
+        "status": "saved",
+        "file": str(memory_path),
+        "message": (
+            f"State saved to {memory_path} in session folder: {session_dir.name}. "
+            "ALL _G data also saved to .pentest_state.json (complete state). "
+            "To continue later, use restore_state_from_json() which loads the complete state."
+        ),
+    }
+
+
 # ─── Tool Dispatch ────────────────────────────────────────────────────────────
 
 TOOL_HANDLERS = {
@@ -1494,6 +1712,11 @@ TOOL_HANDLERS = {
     "web_request": web_request,
     "browser_action": browser_action,
     "osint_recon": osint_recon,
+    "get_session_info": get_session_info,
+    "start_new_session": start_new_session,
+    "generate_report": generate_report,
+    "restore_state_from_json": restore_state_from_json,
+    "compact_state": compact_state,
 }
 
 
@@ -1724,6 +1947,101 @@ TOOL_SCHEMAS = [
                     },
                 },
                 "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_session_info",
+            "description": (
+                "Get current session information: directory, target URL, findings count. "
+                "Useful to know where screenshots and reports are being saved."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_new_session",
+            "description": (
+                "Start a new pentest session with its own isolated workspace folder. "
+                "Call this BEFORE starting a new penetration test to isolate all data."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_url": {
+                        "type": "string",
+                        "description": "Target URL for this pentest (e.g. http://example.com).",
+                    },
+                    "session_name": {
+                        "type": "string",
+                        "description": "Optional custom session name (default: auto-generated timestamp).",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_report",
+            "description": (
+                "Generate the final PDF penetration test report from the current session findings. "
+                "All findings with screenshots will pull images from the session folder."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "output_filename": {
+                        "type": "string",
+                        "description": "Output filename for the report (default: report.pdf).",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "restore_state_from_json",
+            "description": (
+                "Restore ALL session state from .pentest_state.json (complete state). "
+                "Call this when continuing a session after context compaction or restart. "
+                "Restores ALL findings, tested endpoints, session data, etc."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compact_state",
+            "description": (
+                "CALL THIS EVERY 3-4 PHASES to save your progress. This is your memory. "
+                "Write a structured summary of everything done so far. Saves both the summary "
+                "and complete _G state to .pentest_state.json for recovery."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": (
+                            "Structured summary: target, phases completed, confirmed findings, "
+                            "tested endpoints, session state, next phase to continue."
+                        ),
+                    },
+                },
+                "required": ["summary"],
             },
         },
     },

@@ -117,7 +117,7 @@ def web_request(
     data: str = "{}",
     json_data: str = "{}",
     cookies: str = "{}",
-    verify_ssl: bool = True,
+    verify_ssl: bool = False,
     allow_redirects: bool = True,
     timeout: int = 30,
 ) -> str:
