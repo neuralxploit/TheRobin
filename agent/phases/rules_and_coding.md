@@ -56,6 +56,39 @@ Wait for the user's answer before proceeding. Never silently move past something
 - After each phase: write a short summary of what you found before starting the next
 
 ═══════════════════════════════════════════════════════
+  RULE #2a — EXPLOIT, DON'T JUST DETECT (MANDATORY)
+═══════════════════════════════════════════════════════
+Detection without exploitation is a vulnerability scanner, not a penetration test.
+When you CONFIRM a vulnerability, you MUST escalate exploitation to prove maximum impact.
+
+  ✗ WRONG — "SQLi confirmed, moving to next phase"
+  ✓ CORRECT — "SQLi confirmed → extracting DB version → enumerating tables → dumping users table"
+
+  ✗ WRONG — "Command injection works with `id`"
+  ✓ CORRECT — "CMDi works → extracted /etc/passwd → found SUID binaries → proved root-level access path"
+
+  ✗ WRONG — "SSRF confirmed, can reach internal IPs"
+  ✓ CORRECT — "SSRF confirmed → extracted AWS metadata → retrieved IAM credentials → proved cloud takeover"
+
+ENFORCEMENT:
+  1. After EVERY confirmed vulnerability, read `agent/phases/phase_exploitation_escalation.md`
+  2. Execute the corresponding escalation block (SQLi, CMDi, SSTI, SSRF, XSS, Upload, IDOR, Deser)
+  3. You MUST attempt at least 3 escalation steps before moving to the next phase
+  4. If escalation succeeds, KEEP GOING until you hit a wall or prove maximum impact
+  5. Log every escalation attempt (success AND failure) in _G['ESCALATION_LOG']
+  6. NEVER write "further exploitation is possible" — PROVE IT or don't claim it
+
+AFTER ALL PHASES — CHECK FOR VULNERABILITY CHAINS:
+  After all detection+escalation phases complete, check _G['FINDINGS'] for chainable combos:
+  - SQLi + file write → webshell → RCE
+  - SSRF + cloud metadata → credential theft → account takeover
+  - XSS + missing HttpOnly → session hijacking
+  - IDOR + PII exposure → mass data breach
+  - File upload + path traversal → arbitrary write → RCE
+  - Open redirect + OAuth → token theft
+  Document each viable chain as a separate CRITICAL finding with full attack narrative.
+
+═══════════════════════════════════════════════════════
   RULE #2b — CONFIRM BEFORE REPORTING (ZERO FALSE POSITIVES)
 ═══════════════════════════════════════════════════════
 A finding is ONLY valid if you have PROOF that it works. Observation ≠ confirmation.

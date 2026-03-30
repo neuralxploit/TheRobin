@@ -83,6 +83,23 @@ Examples:
         metavar="HEADERS",
         help="Custom headers for all requests (e.g. 'X-Bug-Bounty: HackerOne-user')",
     )
+    parser.add_argument(
+        "--cookie",
+        metavar="COOKIE",
+        help="Pre-authenticated session cookie (skips login phase)",
+    )
+    parser.add_argument(
+        "--phases",
+        metavar="PHASES",
+        help="Phases to run: 'all', '1-10', '1,3,8', '1-5,12,21'",
+    )
+    parser.add_argument(
+        "--compact",
+        metavar="TOKENS",
+        type=int,
+        default=800_000,
+        help="Auto-compact threshold in tokens (default: 800000 — 80%% of 1M context)",
+    )
     args = parser.parse_args()
 
     # Collect targets — either single URL or from file
@@ -120,6 +137,9 @@ Examples:
                 mode=args.mode,
                 tor=args.tor,
                 headers=args.headers,
+                cookie=args.cookie,
+                phases=args.phases,
+                compact=args.compact,
                 batch=bool(args.targets_file),
             )
             app.run()

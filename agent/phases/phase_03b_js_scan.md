@@ -20,39 +20,52 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      # API_KEY patterns are case-SENSITIVE — AWS/GitHub/Stripe formats are strict.
      # Do NOT use re.IGNORECASE on API_KEY patterns; it causes false positives
      # (e.g. AKIASIOcg0ACwwBC0EAI has lowercase letters so it is NOT a real AWS key).
-     JS_SECRET_PATTERNS = {
-         'API_KEY': [
-             # Google API key (case-sensitive prefix AIza)
-             (r'AIza[A-Za-z0-9_\-]{35}', 0),
-             # AWS long-term key: MUST be AKIA + exactly 16 UPPERCASE alphanumeric
-             (r'AKIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
-             # AWS temporary STS key
-             (r'ASIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
-             # AWS other IAM identifiers
-             (r'(?:AGPA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}(?![A-Z0-9])', 0),
-             # Stripe live/test secret key (exactly 24 chars after prefix)
-             (r'sk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
-             (r'sk_test_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
-             (r'rk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
-             # GitHub tokens (strict prefix + exact length)
-             (r'ghp_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'gho_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'ghs_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'ghr_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
-             (r'github_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])', 0),
-             # Slack (strict digit-block format — no IGNORECASE)
-             (r'xoxb-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{24}', 0),
-             (r'xoxp-[0-9]{8,13}-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{32}', 0),
-             # SendGrid API key
-             (r'SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}', 0),
-             # Private key PEM headers
-             (r'-----BEGIN (?:RSA|EC|DSA|OPENSSH) PRIVATE KEY-----', 0),
-             # Twilio auth token
-             (r'SK[a-f0-9]{32}', 0),
-             # Mailgun API key
-             (r'key-[a-f0-9]{32}', 0),
-         ],
-         'SECRET_TOKEN': [
+    JS_SECRET_PATTERNS = {
+        'API_KEY': [
+            # Google API key (case-sensitive prefix AIza)
+            (r'AIza[A-Za-z0-9_\-]{35}', 0),
+            # AWS long-term key: MUST be AKIA + exactly 16 UPPERCASE alphanumeric
+            (r'AKIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
+            # AWS temporary STS key
+            (r'ASIA[A-Z0-9]{16}(?![A-Z0-9])', 0),
+            # AWS other IAM identifiers
+            (r'(?:AGPA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}(?![A-Z0-9])', 0),
+            # Firebase API Key
+            (r'AIzaSy[A-Za-z0-9_\-]{33}', 0),
+            # Azure Search/Storage
+            (r'[a-zA-Z0-9]{32}AzSe[a-zA-Z0-9]{8}', 0),
+            # DigitalOcean
+            (r'dop_v1_[a-f0-9]{64}', 0),
+            # Heroku
+            (r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 0),
+            # Stripe live/test secret key (exactly 24 chars after prefix)
+            (r'sk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
+            (r'sk_test_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
+            (r'rk_live_[A-Za-z0-9]{24}(?![A-Za-z0-9])', 0),
+            # GitHub tokens (strict prefix + exact length)
+            (r'ghp_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'gho_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'ghs_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'ghr_[A-Za-z0-9]{36}(?![A-Za-z0-9])', 0),
+            (r'github_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])', 0),
+            # Slack (strict digit-block format — no IGNORECASE)
+            (r'xoxb-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{24}', 0),
+            (r'xoxp-[0-9]{8,13}-[0-9]{8,13}-[0-9]{8,13}-[A-Za-z0-9]{32}', 0),
+            # SendGrid API key
+            (r'SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}', 0),
+            # Private key PEM headers
+            (r'-----BEGIN (?:RSA|EC|DSA|OPENSSH) PRIVATE KEY-----', 0),
+            # Twilio auth token
+            (r'SK[a-f0-9]{32}', 0),
+            # Mailgun API key
+            (r'key-[a-f0-9]{32}', 0),
+        ],
+        'API_ENDPOINT_HINT': [
+            # Extracts potential hidden API routes from JS strings
+            (r'["\'](/(?:api|v[0-9]|rest|gql|graph|admin|v1|v2|v3)/[a-zA-Z0-9_\-/]+)["\']', 0),
+        ],
+        'SECRET_TOKEN': [
+
              # keyword = "value" or keyword: "value" with quotes required.
              # Value must be 20+ chars. Word boundary on the keyword.
              (r'\b(?:secret[_\-]?key|api[_\-]?secret|jwt[_\-]?secret|signing[_\-]?key|encryption[_\-]?key)\s*[:=]\s*["\']([A-Za-z0-9+/=_\-\.]{20,})["\']', re.IGNORECASE),
@@ -270,30 +283,23 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      # Store findings globally for report generation
      _G['JS_FINDINGS'] = js_findings
 
-      # Also store in main FINDINGS for PDF/ZDL report
-      _G.setdefault('FINDINGS', [])
-      for _jf in js_findings:
-          _G['FINDINGS'].append({
-              'severity': _jf.get('severity', 'HIGH'),
-              'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
-              'url': _jf.get('url', ''),
-              'method': 'GET',
-              'evidence': _jf.get('match', _jf.get('evidence', '')),
-              'impact': 'Exposed credentials or API keys in client-side JavaScript',
-              'screenshot': '',
-          })
+     # Also store in main FINDINGS for PDF/ZDL report
+     _G.setdefault('FINDINGS', [])
+     for _jf in js_findings:
+         _G['FINDINGS'].append({
+             'severity': _jf.get('severity', 'HIGH'),
+             'title': f"JS Secret: {_jf.get('type','')} in {_jf.get('url','').split('/')[-1]}",
+             'url': _jf.get('url', ''),
+             'method': 'GET',
+             'evidence': _jf.get('match', _jf.get('evidence', '')),
+             'impact': 'Exposed credentials or API keys in client-side JavaScript',
+             'screenshot': '',
+         })
 
-      # POST-PHASE SCREENSHOT CHECKPOINT — verify JS secret findings with screenshots
-      print("\n[SCREENSHOT CHECKPOINT] Verify all JavaScript secret findings:")
-      for finding in _G['FINDINGS']:
-          if 'JS Secret' in finding.get('title', '') or 'Secret' in finding.get('title', ''):
-              if not finding.get('screenshot'):
-                  print(f"  [REQUIRED] Take screenshot for: {finding.get('title')}")
-                  print(f"    Navigate to: {finding.get('url')}")
-                  print(f"    browser_action(action='navigate', url='{finding.get('url')}')")
-                  print(f"    browser_action(action='screenshot', filename='phase_03b_js_secret_{finding.get('title').replace('JS Secret: ','').lower()[:40]}.png')")
-                  print(f"    Update finding['screenshot'] with the filename")
-      print("\n  For JS secret findings, verify by viewing the JavaScript file content in browser DevTools Sources tab. Screenshot should show the secret in context.")
+     # DO NOT use browser_action to navigate to raw .js files — they are not HTML
+     # pages and will return huge payloads that crash the model context.
+     # The scan output above already shows the full match, value, line, and context.
+     # That IS the proof. No screenshot needed for JS secret findings.
 
      # REPORT SUMMARY TO CONVERSATION (MANDATORY)
      js_critical = [f for f in js_findings if f['severity'] == 'CRITICAL']
@@ -306,17 +312,23 @@ PHASE 3.5 — JAVASCRIPT SECRET SCANNING (MANDATORY)
      print(f"Total findings    : {len(js_findings)}")
 
      if js_critical or js_high:
-         print("\n[JAVASCRIPT SECURITY FINDINGS]")
-         for f in js_critical:
+         print("\n" + "="*70)
+         print("  JAVASCRIPT SECURITY FINDINGS — FULL DETAILS")
+         print("="*70)
+         for f in js_critical + js_high:
              filename = f['url'].split('/')[-1] if 'url' in f else 'unknown'
-             print(f"  [CRITICAL] {f['type']} in {filename}")
-             print(f"    Match: {f['match'][:80]}")
+             print(f"\n  [{f['severity']}] {f['type']} in {filename}")
+             print(f"    URL:     {f.get('url', 'N/A')}")
+             print(f"    Match:   {f['match'][:120]}")
+             if 'value' in f and f['value'] != f['match']:
+                 print(f"    Value:   {f['value'][:120]}")
              if 'line' in f:
-                 print(f"    Line: {f['line']}")
-         for f in js_high:
-             filename = f['url'].split('/')[-1] if 'url' in f else 'unknown'
-             print(f"  [HIGH] {f['type']} in {filename}")
-             print(f"    Match: {f['match'][:80]}")
+                 print(f"    Line:    {f['line']}")
+             if 'context' in f:
+                 print(f"    Context: {f['context'][:200]}")
+             if 'decoded' in f:
+                 print(f"    Decoded: {f['decoded'][:120]}")
+         print("\n" + "="*70)
      else:
          print("\n[INFO] No API keys, secrets, or hardcoded credentials found in JavaScript files.")
      ```

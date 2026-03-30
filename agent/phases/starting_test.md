@@ -3,7 +3,69 @@
 ═══════════════════════════════════════════════════════
 When given a target:
 
-  1. Confirm target URL and PRIMARY credentials only.
+1. **Phase Selection (MANDATORY)**:
+   Display the full numbered phase list and ask the user which phases to run.
+   Format your output EXACTLY like this so the user can reply with numbers:
+
+   ```
+   Target initialized: [TARGET]
+
+   Select phases to run (reply with numbers, ranges, or keywords):
+     Examples: "all"  |  "1-10"  |  "1,3,6,8"  |  "1-5,12,21"  |  "autonomous"
+
+    1  Recon & Unauthenticated Crawl
+    2  Security Headers
+    3  Authentication
+    4  JS Secret Scanning
+    5  Session Management
+    6  XSS: Reflected + Stored
+    7  XSS: DOM-Based
+    8  SQL Injection
+    9  NoSQL Injection
+   10  CSRF
+   11  Technology Fingerprinting & CVE
+   12  CORS, Open Redirect, SSL/TLS
+   13  Deep JWT Testing
+   14  Command Injection
+   15  SSTI
+   16  SSRF
+   17  Deserialization
+   18  File Upload
+   19  GraphQL
+   20  HTTP Protocol & Header Attacks
+   21  IDOR / Access Control
+   22  Business Logic Flaws
+   23  XXE & Path Traversal
+   24  API Security & Info Disclosure
+   25  Race Conditions
+   26  Sensitive Files & Directories
+   27  Account Security & Enumeration
+   28  Error Handling & Info Disclosure
+   29  WebSocket Security
+   30  OAuth / SSO Abuse
+   31  Mass Assignment, HPP & Prototype Pollution
+   32  Cache Poisoning & Request Smuggling
+   33  Final Report (always included)
+
+   > Your selection:
+   ```
+
+   **Parse the user's reply:**
+   - `all` or `autonomous` → run all phases 1-29 without stopping
+   - `1-10` → run phases 1 through 10
+   - `1,3,8` → run only those specific phases
+   - `1-5,12,21` → mix of ranges and individual numbers
+   - If the user provides a pre-selected list via `--phases "1,3,5-10"` flag, skip the prompt and use that list directly.
+
+   Store the selected phase list before starting:
+   ```python
+   _G['SELECTED_PHASES'] = [1, 3, 5, 6, 7, 8]  # example — actual numbers from user input
+   _G['AUTONOMOUS'] = False  # True if user chose "all" or "autonomous"
+   ```
+
+   **During execution:** Only run phases in `_G['SELECTED_PHASES']`. Skip any phase not in the list (mark it `[-]` in plan.md). Phase 29 (report) always runs at the end.
+
+2. Confirm target URL and PRIMARY credentials only.
    A second account for IDOR will be requested in Phase 17.
 
    Store primary credentials in _G:
@@ -45,7 +107,11 @@ When given a target:
    - [ ] Phase 26 — Sensitive Files & Directories
    - [ ] Phase 27 — Account Security & Enumeration
    - [ ] Phase 28 — Error Handling & Info Disclosure
-   - [ ] Phase 29 — Final Report
+   - [ ] Phase 29 — WebSocket Security
+   - [ ] Phase 30 — OAuth / SSO Abuse
+   - [ ] Phase 31 — Mass Assignment, HPP & Prototype Pollution
+   - [ ] Phase 32 — Cache Poisoning & Request Smuggling
+   - [ ] Phase 33 — Final Report
 
    ## Findings
    (updated as vulnerabilities are confirmed)

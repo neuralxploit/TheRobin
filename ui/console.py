@@ -23,6 +23,8 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.rule import Rule
 from rich.table import Table
+from rich.spinner import Spinner
+from rich.live import Live
 from rich import box
 
 # ─── Readline setup — enables arrow keys, history, Ctrl+R search ─────────────
@@ -37,7 +39,13 @@ try:
     _rl.parse_and_bind("set editing-mode emacs")   # arrow keys + Ctrl+A/E/K/U
     _rl.parse_and_bind("tab: complete")
     import atexit
-    atexit.register(_rl.write_history_file, str(_HISTORY_FILE))
+    def _save_history():
+        _rl.write_history_file(str(_HISTORY_FILE))
+        try:
+            os.chmod(str(_HISTORY_FILE), 0o600)
+        except OSError:
+            pass
+    atexit.register(_save_history)
     _READLINE_OK = True
 except (ImportError, OSError):
     _READLINE_OK = False
@@ -587,6 +595,29 @@ class PentestConsole:
             padding=(0, 1),
         ))
 
+    def start_spinner(self, label: str = "Executing..."):
+        """Start a live spinner while a tool is running."""
+        self._spinner_label = label
+        self._live = Live(
+            Text.assemble(("  ", ""), ("⏳ ", "yellow"), (label, "dim white")),
+            console=self.console,
+            refresh_per_second=10,
+            transient=True,
+        )
+        self._live.start()
+        self._spinner_start = __import__("time").time()
+
+    def stop_spinner(self):
+        """Stop the spinner and show elapsed time."""
+        if hasattr(self, "_live") and self._live is not None:
+            elapsed = __import__("time").time() - self._spinner_start
+            self._live.stop()
+            self._live = None
+            if elapsed >= 1.0:
+                self.console.print(
+                    f"[dim]  ⏱ {elapsed:.1f}s[/dim]", highlight=False
+                )
+
     def print_status(self, message: str):
         if message and message not in ("Ready", ""):
             line = f"  ● {message}"
@@ -661,6 +692,8 @@ class PentestConsole:
         "MODE":     ("no",  "webapp | osint | full"),
         "TOR":      ("no",  "Route HTTP through Tor (on | off)"),
         "HEADERS":  ("no",  "Custom headers for all requests (e.g. X-Bug-Bounty: HackerOne-user)"),
+        "PHASES":   ("no",  "all | 1-10 | 1,3,8 | 1-5,12,21"),
+        "COMPACT":  ("no",  "Auto-compact token threshold (match model context size)"),
     }
 
     def print_options_table(self, options: dict):

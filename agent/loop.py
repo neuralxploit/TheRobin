@@ -65,10 +65,9 @@ def _next_uncompleted_phase(workspace_dir) -> str | None:
         pass
     return None
 
-# System prompt is ~30K tokens. Compact before hitting context limits.
-# 130K leaves ~100K for conversation = 5-6 phases of work before compacting.
-# Works well with large-context cloud models (kimi-k2.5, glm-4.7, qwen3.5).
-_COMPACT_THRESHOLD = 130_000
+# Default: compaction disabled (0 = never auto-compact).
+# Set via AgentLoop(compact_threshold=N) or /compact command for manual runs.
+_COMPACT_THRESHOLD = 0
 
 # Minimum number of non-system messages before compaction is allowed.
 # Prevents compacting on the first message when there's nothing to compact.
@@ -220,6 +219,9 @@ class AgentLoop:
         on_tool_result: Callable,
         on_status: Callable,
         mode: str = "webapp",
+        compact_threshold: int = 0,
+        on_tool_start: Callable = None,
+        on_tool_done: Callable = None,
     ):
         self.model        = model
         self._system      = get_system_prompt(mode)
@@ -228,6 +230,10 @@ class AgentLoop:
         self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
         self.on_status    = on_status
+        self.on_tool_start = on_tool_start or (lambda n: None)
+        self.on_tool_done  = on_tool_done or (lambda: None)
+        # 0 = auto-compact disabled; >0 = compact when tokens exceed this value
+        self.compact_threshold = compact_threshold if compact_threshold > 0 else 0
 
     # ── token estimate ────────────────────────────────────────────────────────
 
@@ -487,7 +493,8 @@ class AgentLoop:
             # Skip if we just compacted this iteration (error recovery already ran compact).
             # Skip if there aren't enough messages yet (nothing to compact on fresh start).
             non_system_count = sum(1 for m in self.history if m.get("role") != "system")
-            if tokens > _COMPACT_THRESHOLD and not _just_compacted and non_system_count >= _MIN_MESSAGES_BEFORE_COMPACT:
+            _threshold = self.compact_threshold or _COMPACT_THRESHOLD
+            if _threshold > 0 and tokens > _threshold and not _just_compacted and non_system_count >= _MIN_MESSAGES_BEFORE_COMPACT:
                 self.on_status("Context growing — compacting now...")
                 info = self._semantic_compact()
                 self.on_token(
@@ -583,7 +590,9 @@ class AgentLoop:
                     self.on_status("")
                     self.on_tool_call(name, args)
 
+                    self.on_tool_start(name)
                     result = execute_tool(name, args)
+                    self.on_tool_done()
                     self.on_tool_result(name, result)
 
                     # Vision support: extract screenshot_base64 from browser_action

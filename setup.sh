@@ -114,6 +114,42 @@ with open(cfg_path, "w") as f:
     f.write("\n")
 PYEOF
     echo "  [OK] OpenCode MCP config updated"
+
+    # Sync all available Ollama models into opencode.json
+    if curl -s http://localhost:11434/api/tags &>/dev/null; then
+        echo "  Syncing Ollama models into OpenCode config..."
+        python3 - "$OPENCODE_CFG" <<'PYEOF'
+import json, sys, urllib.request
+cfg_path = sys.argv[1]
+try:
+    with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
+        models = json.load(r).get("models", [])
+except Exception as e:
+    print(f"  [WARN] Could not fetch Ollama models: {e}")
+    sys.exit(0)
+
+with open(cfg_path) as f:
+    cfg = json.load(f)
+
+cfg.setdefault("provider", {}).setdefault("ollama", {}).setdefault("models", {})
+for m in models:
+    name = m["name"]
+    cfg["provider"]["ollama"]["models"][name] = {"name": name}
+
+# Ensure required ollama provider fields are set
+cfg["provider"]["ollama"].setdefault("name", "Ollama (local)")
+cfg["provider"]["ollama"].setdefault("npm", "@ai-sdk/openai-compatible")
+cfg["provider"]["ollama"].setdefault("options", {"baseURL": "http://127.0.0.1:11434/v1"})
+
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+
+print(f"  [OK] Synced {len(models)} Ollama model(s) into OpenCode config")
+PYEOF
+    else
+        echo "  [SKIP] Ollama not running — skipping model sync"
+    fi
 else
     echo "  [SKIP] OpenCode not found (skipping MCP patch)"
 fi

@@ -24,6 +24,20 @@ import urllib.parse
 import urllib.request
 import urllib.error
 
+# Domain format validation — prevents injection in subprocess calls
+_DOMAIN_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$')
+
+
+def _validate_domain(domain: str) -> str | None:
+    """Validate domain format. Returns error message or None if valid."""
+    if not domain or not isinstance(domain, str):
+        return "Domain is required and must be a string"
+    if len(domain) > 253:
+        return f"Domain too long: {len(domain)} chars (max 253)"
+    if not _DOMAIN_RE.match(domain):
+        return f"Invalid domain format: {domain!r}. Only alphanumeric, hyphens, and dots allowed."
+    return None
+
 
 # ─── HTTP helper ──────────────────────────────────────────────────────────────
 
@@ -162,6 +176,9 @@ def crtsh_subdomains(domain: str) -> dict:
     Free, highly reliable, no API key needed.
     Often finds dev/staging/internal subdomains not in DNS brute lists.
     """
+    err = _validate_domain(domain)
+    if err:
+        return {"error": err, "domain": domain, "subdomains": [], "count": 0}
     try:
         url = f"https://crt.sh/?q=%25.{urllib.parse.quote(domain)}&output=json"
         raw = _get(url, timeout=30)
@@ -197,6 +214,9 @@ def dns_records(domain: str) -> dict:
     Enumerate DNS records: A, AAAA, MX, TXT, NS, CNAME, SOA.
     Uses dig (or nslookup as fallback).
     """
+    err = _validate_domain(domain)
+    if err:
+        return {"error": err, "domain": domain, "records": {}}
     records = {}
     record_types = ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA"]
 
@@ -242,6 +262,9 @@ def whois_lookup(domain: str) -> dict:
     WHOIS lookup — registrar, dates, name servers, registrant info.
     Useful for understanding target ownership and attack surface.
     """
+    err = _validate_domain(domain)
+    if err:
+        return {"error": err, "domain": domain}
     try:
         r = subprocess.run(
             ["whois", domain],
@@ -292,6 +315,9 @@ def wayback_urls(domain: str, limit: int = 100) -> dict:
     Query Wayback Machine CDX API for historical URLs on the target.
     Excellent for finding forgotten endpoints, old admin panels, backup files.
     """
+    err = _validate_domain(domain)
+    if err:
+        return {"error": err, "domain": domain, "urls": [], "count": 0}
     try:
         url = (
             f"https://web.archive.org/cdx/search/cdx"
@@ -357,6 +383,9 @@ def subdomain_bruteforce(domain: str, wordlist: list = None) -> dict:
     Brute-force common subdomains via DNS resolution.
     Fast — only does DNS lookups, no HTTP requests.
     """
+    err = _validate_domain(domain)
+    if err:
+        return {"error": err, "domain": domain, "found": {}, "count": 0}
     words = wordlist or _COMMON_SUBDOMAINS
     found = {}
 
@@ -383,6 +412,9 @@ def theharvester(domain: str, sources: str = "duckduckgo,crtsh,dnsdumpster") -> 
     Run theHarvester for email/subdomain/IP harvesting.
     Uses multiple OSINT sources simultaneously.
     """
+    err = _validate_domain(domain)
+    if err:
+        return {"error": err, "domain": domain}
     try:
         r = subprocess.run(
             ["theHarvester", "-d", domain, "-b", sources, "-l", "100"],

@@ -51,6 +51,8 @@ class App:
         tor: bool = False,
         headers: str = None,
         batch: bool = False,
+        phases: str = None,
+        compact: int = 0,
     ):
         self.ui = PentestConsole()
         self.model_override = model_override
@@ -72,6 +74,8 @@ class App:
             "MODE":     mode     or "webapp",
             "TOR":      "on" if tor else "off",
             "HEADERS":  headers  or "",
+            "PHASES":   phases   or "all",
+            "COMPACT":  str(compact) if compact else "auto",
         }
         if tor:
             import agent.tools as _tools_mod
@@ -150,6 +154,18 @@ class App:
 
         # Init agent with chosen model
         self.model = self.session["MODEL"] or self.model
+        from agent.ollama import get_compact_threshold, set_num_ctx
+        compact_val = self.session.get("COMPACT", "auto")
+        if compact_val.lower() not in ("off", "auto"):
+            try:
+                user_ctx = int(compact_val)
+                # User set explicit context size — use it for both compact and num_ctx
+                compact_threshold = user_ctx
+                set_num_ctx(self.model, user_ctx)
+            except ValueError:
+                compact_threshold = get_compact_threshold(self.model)
+        else:
+            compact_threshold = get_compact_threshold(self.model)
         self.agent = AgentLoop(
             model=self.model,
             on_token=self._on_token,
@@ -157,6 +173,9 @@ class App:
             on_tool_result=self._on_tool_result,
             on_status=self._on_status,
             mode=self.session.get("MODE", "webapp"),
+            compact_threshold=compact_threshold,
+            on_tool_start=self._on_tool_start,
+            on_tool_done=self._on_tool_done,
         )
 
         self.ui.print_system(f"Session workspace: {session_dir}")
@@ -274,7 +293,7 @@ class App:
                 self.ui.print_system("Nothing to clear — pentest has not started yet.")
 
             elif cmd in ("help",):
-                self.ui.print_system("Available options: TARGET  MODEL  USERNAME  PASSWORD  COOKIE  SCOPE  MODE  TOR  HEADERS")
+                self.ui.print_system("Available options: TARGET  MODEL  USERNAME  PASSWORD  COOKIE  SCOPE  MODE  TOR  HEADERS  PHASES")
                 self.ui.print_system("  set TARGET   https://target.com")
                 self.ui.print_system("  set USERNAME admin")
                 self.ui.print_system("  set PASSWORD secret123")
@@ -284,6 +303,8 @@ class App:
                 self.ui.print_system("  set TOR      on | off  (route HTTP through Tor localhost:9050)")
                 self.ui.print_system("  set HEADERS  'X-Bug-Bounty: HackerOne-username'  (added to all requests)")
                 self.ui.print_system("  set MODEL    glm-4.7:cloud  |  lmstudio:qwen2.5-coder-32b  |  claude-sonnet-4-20250514")
+                self.ui.print_system("  set PHASES   all | 1-10 | 1,3,8 | 1-5,12,21")
+                self.ui.print_system("  set COMPACT  1000000  (auto-compact threshold in tokens; match your model's context size)")
                 self.ui.print_system("  run          — start the pentest")
 
             elif cmd == "model" and len(parts) >= 2:
@@ -422,7 +443,30 @@ class App:
                 f"curl command in your PoCs. This is required for bug bounty authorization."
             )
 
+        phases = s.get("PHASES", "all").strip()
+        if phases and phases.lower() != "all":
+            selected = self._parse_phases(phases)
+            lines.append(
+                f"Run ONLY these phases: {', '.join(str(p) for p in selected)}\n"
+                f"Skip all other phases entirely."
+            )
+        else:
+            lines.append("Run ALL 29 phases in order (1 through 29).")
+
         return "\n".join(lines)
+
+    @staticmethod
+    def _parse_phases(spec: str) -> list[int]:
+        """Parse phase spec like '1-5,8,21' into a sorted list of ints."""
+        result = set()
+        for part in spec.split(","):
+            part = part.strip()
+            if "-" in part:
+                a, b = part.split("-", 1)
+                result.update(range(int(a), int(b) + 1))
+            elif part.isdigit():
+                result.add(int(part))
+        return sorted(result)
 
     def _run_agent(self, message: str):
         """Run the agent synchronously in the main thread (blocking)."""
@@ -442,6 +486,23 @@ class App:
     def _on_tool_call(self, name: str, args: dict):
         """Called before a tool is executed."""
         self.ui.print_tool_call(name, args)
+
+    def _on_tool_start(self, name: str):
+        """Called when a tool starts executing — shows spinner."""
+        labels = {
+            "run_python": "Running Python...",
+            "bash": "Executing command...",
+            "web_request": "Sending request...",
+            "browser_action": "Browser working...",
+            "write_file": "Writing file...",
+            "read_file": "Reading file...",
+            "osint_recon": "OSINT scanning...",
+        }
+        self.ui.start_spinner(labels.get(name, f"Running {name}..."))
+
+    def _on_tool_done(self):
+        """Called when a tool finishes — stops spinner."""
+        self.ui.stop_spinner()
 
     def _on_tool_result(self, name: str, result: str):
         """Called after a tool executes with its result."""
