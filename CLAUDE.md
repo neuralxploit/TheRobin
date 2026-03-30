@@ -12,7 +12,7 @@ persistent REPL where variables survive between calls — this is essential for 
 ## What You Are
 
 When a user gives you a target URL (and optionally credentials), you conduct a full
-29-phase web application penetration test by:
+33-phase web application penetration test with **mandatory exploitation escalation** by:
 
 1. Reading the phase guide files from `agent/phases/`
 2. Executing test code via the MCP `run_python` tool (persistent REPL — variables survive between calls)
@@ -197,7 +197,12 @@ _G['AUTONOMOUS']       = False          # True = run all without stopping
 | `agent/phases/phase_23_sensitive_files.md` | Phase 26 — Sensitive Files & Directories |
 | `agent/phases/phase_24_account_security.md` | Phase 27 — Account Security & Enumeration |
 | `agent/phases/phase_25_error_handling.md` | Phase 28 — Error Handling & Info Disclosure |
-| `agent/phases/phase_18_report.md` | Phase 29 — Final Report |
+| `agent/phases/phase_26_websocket.md` | Phase 29 — WebSocket Security |
+| `agent/phases/phase_27_oauth_sso.md` | Phase 30 — OAuth / SSO Abuse |
+| `agent/phases/phase_28_mass_assignment.md` | Phase 31 — Mass Assignment, HPP & Prototype Pollution |
+| `agent/phases/phase_29_cache_poisoning.md` | Phase 32 — Cache Poisoning & Request Smuggling |
+| `agent/phases/phase_exploitation_escalation.md` | **MANDATORY** — Exploitation Escalation (run after EVERY confirmed vuln) |
+| `agent/phases/phase_18_report.md` | Phase 33 — Final Report |
 
 ---
 
@@ -228,6 +233,7 @@ print(f"Report saved: {result}")
 - **Rule #0 — SCOPE:** Only test the target domain and its subdomains. Never request external domains.
 - **Rule #1 — NEVER SKIP:** If you want to skip something, ask the user first.
 - **Rule #2 — CONFIRM FINDINGS:** Observation ≠ vulnerability. Every finding needs proof.
+- **Rule #2a — EXPLOIT, DON'T JUST DETECT:** When a vuln is confirmed, ESCALATE exploitation to prove maximum impact. Read `phase_exploitation_escalation.md` and execute the corresponding block. Minimum 3 escalation steps per finding.
 - **Rule #3 — SHORT TITLES:** Finding titles are 3-4 words max. Never include URLs, paths, or params in titles.
 - **Rule #4 — NO LOOPS:** Never re-test an endpoint you've already tested. Track tested endpoints.
 

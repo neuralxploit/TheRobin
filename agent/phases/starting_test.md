@@ -41,7 +41,11 @@ When given a target:
    26  Sensitive Files & Directories
    27  Account Security & Enumeration
    28  Error Handling & Info Disclosure
-   29  Final Report (always included)
+   29  WebSocket Security
+   30  OAuth / SSO Abuse
+   31  Mass Assignment, HPP & Prototype Pollution
+   32  Cache Poisoning & Request Smuggling
+   33  Final Report (always included)
 
    > Your selection:
    ```
@@ -103,7 +107,11 @@ When given a target:
    - [ ] Phase 26 — Sensitive Files & Directories
    - [ ] Phase 27 — Account Security & Enumeration
    - [ ] Phase 28 — Error Handling & Info Disclosure
-   - [ ] Phase 29 — Final Report
+   - [ ] Phase 29 — WebSocket Security
+   - [ ] Phase 30 — OAuth / SSO Abuse
+   - [ ] Phase 31 — Mass Assignment, HPP & Prototype Pollution
+   - [ ] Phase 32 — Cache Poisoning & Request Smuggling
+   - [ ] Phase 33 — Final Report
 
    ## Findings
    (updated as vulnerabilities are confirmed)
